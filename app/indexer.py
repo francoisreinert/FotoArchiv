@@ -60,6 +60,11 @@ PROGRESS = Progress()
 
 # ------------------------------------------------------------- 1. Scan ----
 
+# Ordner, die nie Fotos des Nutzers enthalten: Papierkorb, Systemordner, NAS-Vorschaubilder/-Papierkörbe
+SKIP_DIRS = {"fotoarchiv-papierkorb", "$recycle.bin", "system volume information", "@eadir", "#recycle", "#snapshot",
+             "@recycle", "@recently-snapshot", ".snapshot", "@sharebin", "lost+found"}
+
+
 def scan(con, folders):
     PROGRESS.set_phase("Dateien suchen")
     if not os.path.isdir(common.LIB_ROOT):
@@ -92,7 +97,8 @@ def scan(con, folders):
                     continue
                 try:
                     if e.is_dir(follow_symlinks=False):
-                        stack.append(e.path)
+                        if e.name.lower() not in SKIP_DIRS:
+                            stack.append(e.path)
                     else:
                         files[e.name.lower()] = e
                 except OSError:

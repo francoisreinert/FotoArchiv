@@ -502,3 +502,18 @@ a.stat:hover { border-color: #4a525b; }
 .kindsw button + button { border-left: 1px solid var(--line); }
 .kindsw button.on { background: #22344a; color: #cfe5ff; }
 @media (max-width: 900px) { .kindsw button { padding: 6px 7px; font-size: 12px; } }
+
+/* Kamerafilter */
+.camsw { white-space: nowrap; max-width: 260px; overflow: hidden; text-overflow: ellipsis; flex: none; }
+.camsw.on { background: #22344a; color: #cfe5ff; border-color: #22344a; }
+.camsw .x { margin-left: 6px; opacity: .8; }
+.cammenu { min-width: 280px; max-height: 70vh; overflow: auto; }
+.cammenu [data-cam] { display: flex; justify-content: space-between; gap: 16px; }
+.cammenu small { color: var(--muted); font-variant-numeric: tabular-nums; }
+.cammenu .cammodel { padding-left: 26px; font-size: 13px; }
+
+/* Weitere Fotoordner */
+.srclist { margin: 8px 0 12px; }
+.srcrow { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; padding: 8px 0; border-bottom: 1px solid var(--line); }
+.srcok { color: var(--ok); }
+.srcbad { color: #ff8a84; }

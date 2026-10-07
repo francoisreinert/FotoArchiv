@@ -38,6 +38,8 @@ FUNKTIONEN
                Personen: Namen tippen und aus der Liste wählen (mehrere = Fotos mit allen zusammen).
                "Filter": Zeitraum, nur Videos/Fotos, Favoriten, Fotos ohne sicheres Datum.
                Oben "Alle | 📷 Fotos | 🎬 Videos" trennt direkt – gilt für jede Ansicht (Alben, Ordner …).
+               "📷 Kamera ▾" zeigt die Kameras der aktuellen Ansicht (Album, Jahr, Ordner, Suche) nach Marke
+               und Modell, z. B. "GoPro" (alle GoPros) oder nur "GoPro HERO9 Black"; ✕ hebt den Filter auf.
   Ordner       Die Ordnerstruktur des Fotoordners
   Personen     Gesichter werden beim Einlesen in allen Fotos gefunden. So geht's los:
                - "Unbekannte Gesichter benennen": ähnliche Gesichter sind schon gruppiert –
@@ -97,8 +99,20 @@ VIDEOSCHNITT
   mit Übergängen, Blenden und Ton (ca. 1–3 s) – nur zum Ansehen, der Film entsteht mit "Rendern ▶". Der gerechnete
   Bereich ist in der Zeitleiste blau markiert: dort klicken spielt die Vorschau ab dieser Stelle, Leertaste
   startet/stoppt, "↻ Nochmal" von vorn, "✕ Vorschau schließen" zurück zur Live-Ansicht.
-  "Rendern ▶" rechnet im Hintergrund (Renderliste mit Fortschritt, Abbrechen, Historie); das MP4 liegt in
+  "Rendern ▶" rechnet im Hintergrund auf allen Prozessorkernen (Renderliste mit Fortschritt, Abbrechen,
+  Historie); auf einem aktuellen Laptop etwa so schnell wie Echtzeit oder schneller. Das MP4 liegt in
   "FotoArchiv Export" auf dem Schreibtisch. Format 16:9, 9:16 (Handy), 1:1, 4:3, wahlweise 4K; bis 3 Stunden.
+
+WEITERE FOTOORDNER (NAS, zweite Platte, Ordner auf dem Computer)
+  Bibliothek › "Weitere Fotoordner" › "+ Fotoordner hinzufügen …": Ordner wählen (oder Pfad eintippen,
+  z. B. \\NAS\Fotos oder ein verbundenes Netzlaufwerk Z:\Fotos) und einen Namen geben, dann
+  "Bibliothek aktualisieren". Die Fotos erscheinen überall gemeinsam, unter "Ordner" als 🖧 Name.
+  - Nicht erreichbar (NAS aus, Platte nicht dran): wird beim Einlesen übersprungen, die Fotos bleiben im Katalog.
+  - Anderer Laufwerksbuchstabe oder am Mac: "Ort ändern …" – Alben, Personen usw. bleiben erhalten.
+  - "Entfernen" nimmt die Fotos aus dem Katalog; die Dateien bleiben unangetastet.
+  - Gelöschtes landet im Papierkorb auf derselben Platte/NAS (Ordner "FotoArchiv-Papierkorb" dort).
+  - NAS-Systemordner (@eaDir, #recycle, .snapshot …) werden nie eingelesen.
+  - Der FotoArchiv-Ordner selbst (Katalog) gehört auf den Computer oder die USB-Platte, nicht auf das NAS.
 
 LÖSCHEN
   - Fotos/Videos: markieren und Taste Entf (oder "Mehr …" › In den Papierkorb), im Betrachter

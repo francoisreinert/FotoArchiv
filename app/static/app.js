@@ -73,16 +73,18 @@ function filterParams(extra = {}) {
   if (f.from) p.set("from", f.from);
   if (f.to) p.set("to", f.to);
   if (f.kind) p.set("kind", f.kind);
+  if (f.camera) p.set("camera", f.camera);
   if (f.fav) p.set("fav", "1");
   if (f.nodate) p.set("nodate", "1");
   if (f.dups) p.set("dups", "1");
   if (f.sort !== "desc") p.set("sort", f.sort);
   for (const [k, v] of Object.entries(extra)) if (v !== undefined && v !== null) p.set(k, v);
+  state.lastExtra = extra;  // für die Kameraliste der aktuellen Ansicht
   return p;
 }
 function hasFilters() {
   const f = state.filters;
-  return !!(f.q || state.chips.length || f.from || f.to || f.kind || f.fav || f.nodate);
+  return !!(f.q || state.chips.length || f.from || f.to || f.kind || f.camera || f.fav || f.nodate);
 }
 
 // ------------------------------------------------- Virtuelles Raster ----
@@ -691,7 +693,7 @@ const routes = {
     page.className = "page";
     const parts = path ? path.split("/") : [];
     let crumbs = `<a href="#/ordner">Alle Ordner</a>`;
-    parts.forEach((p, i) => { crumbs += ` › <a href="#/ordner/${encodeURIComponent(parts.slice(0, i + 1).join("/"))}">${esc(p)}</a>`; });
+    parts.forEach((p, i) => { crumbs += ` › <a href="#/ordner/${encodeURIComponent(parts.slice(0, i + 1).join("/"))}">${esc(i === 0 && p.startsWith("@") ? "🖧 " + p.slice(1) : p)}</a>`; });
     if (path) crumbs += `<span style="flex:1"></span><button id="fdel" class="danger">Ordner löschen</button>`;
     page.innerHTML = `<div class="crumbs">${crumbs}</div>` +
       (d.children.length ? `<div class="folders">${d.children.map(c => `
@@ -1143,6 +1145,17 @@ const routes = {
           im FotoArchiv-Ordner löschen (Personen, Alben usw. gehen dabei verloren).</p>`
           : `<button class="primary" id="pickroot">Fotoordner wählen …</button>`}
       </div>
+      <div class="card"><h2>Weitere Fotoordner <small class="muted">NAS, zweite Platte, Ordner auf dem Computer</small></h2>
+        <p class="muted">Zusätzlich zum Fotoordner oben – die Fotos erscheinen überall gemeinsam (Zeitleiste, Alben, Personen, Suche),
+        unter „Ordner“ als eigener Bereich 🖧. Ist eine Quelle gerade nicht erreichbar (NAS aus, Platte nicht angesteckt), wird sie beim
+        Einlesen übersprungen; ihre Fotos bleiben im Katalog. Hinweis: Der Katalog selbst bleibt immer im FotoArchiv-Ordner, nie auf dem NAS.</p>
+        <div class="srclist">${(s.sources || []).map(x => `<div class="srcrow"><b>🖧 ${esc(x.name)}</b><code>${esc(x.path)}</code>
+            ${x.ok ? '<span class="srcok">✓ erreichbar</span>' : '<span class="srcbad">nicht erreichbar</span>'}
+            <span class="muted">${x.count.toLocaleString("de-DE")} Fotos/Videos</span><span style="flex:1"></span>
+            <button data-srcpath="${esc(x.name)}" title="z. B. anderer Laufwerksbuchstabe oder am Mac">Ort ändern …</button>
+            <button data-srcdel="${esc(x.name)}" class="danger">Entfernen</button></div>`).join("") || '<p class="muted">Noch keine weiteren Fotoordner.</p>'}</div>
+        <button class="primary" id="srcadd">+ Fotoordner hinzufügen …</button>
+      </div>
       <div class="card" id="catcard">${catalogHtml(s)}      </div>
       <div class="card"><h2>Ordner in der Bibliothek</h2>
         <p class="muted">Diese Ordner auf der Festplatte werden durchsucht. Nach Änderungen „Bibliothek aktualisieren“.</p>
@@ -1170,6 +1183,32 @@ const routes = {
           : `<button class="primary" id="pwset">Passwort festlegen</button>`}</div></div>
       <div class="card"><h2>Beenden</h2><p class="muted">Vor dem Abziehen der Festplatte FotoArchiv beenden.</p><button id="quit" class="danger">FotoArchiv beenden</button></div>`;
       bindTvSettings(page);
+      $("#srcadd", page).onclick = async () => {
+        const path = await browseFs("");
+        if (!path) return;
+        const base = path.replace(/[\\/]+$/, "").split(/[\\/]/).pop() || "Fotos";
+        const name = await askText("Name für diesen Fotoordner (erscheint unter „Ordner“ als 🖧 …)", base);
+        if (!name) return;
+        try {
+          await api("/api/sources", { path, name });
+          toast("Hinzugefügt – jetzt „Bibliothek aktualisieren“, um die Fotos einzulesen", 7000);
+          render();
+        } catch (e) { toast(e.message, 9000); }
+      };
+      $$("[data-srcpath]", page).forEach(b => b.onclick = async () => {
+        const src = (s.sources || []).find(x => x.name === b.dataset.srcpath);
+        const path = await browseFs(src && src.ok ? src.path : "");
+        if (!path) return;
+        try { await api("/api/sources/path", { name: b.dataset.srcpath, path }); toast("Neuer Ort gespeichert"); render(); }
+        catch (e) { toast(e.message, 9000); }
+      });
+      $$("[data-srcdel]", page).forEach(b => b.onclick = async () => {
+        const n = b.dataset.srcdel;
+        if (!await confirmBox(`Fotoordner „${n}“ aus FotoArchiv entfernen? Seine Fotos verschwinden aus dem Katalog (samt Alben-Zuordnung und Personen). ` +
+          "Die Dateien selbst bleiben unangetastet; später wieder hinzufügen liest sie neu ein.")) return;
+        try { const r = await api("/api/sources/delete", { name: n }); toast(`Entfernt (${r.removed.toLocaleString("de-DE")} Einträge)`); render(); }
+        catch (e) { toast(e.message, 9000); }
+      });
       const pick = $("#pickroot", page);
       if (pick) pick.onclick = async () => {
         const path = await browseFs(s.root);
@@ -1211,8 +1250,11 @@ const routes = {
 function browseFs(start) {
   return new Promise(res => {
     const p = modal(`<div class="fsb"><b>Ordner oder ZIP-Datei wählen</b><div class="row roots"></div>
+      <div class="row"><input type="text" id="fspath" placeholder="oder Pfad eingeben, z. B. \\\\NAS\\Fotos oder Z:\\Fotos" style="flex:1"><button id="fsgo">Öffnen</button></div>
       <div class="cur"></div><div class="list"></div>
       <div class="row"><button class="primary" id="fsok">Diesen Ordner wählen</button><button id="fsno">Abbrechen</button></div></div>`);
+    $("#fsgo", p).onclick = () => { const v = $("#fspath", p).value.trim(); if (v) load(v).catch(e => toast(e.message)); };
+    $("#fspath", p).addEventListener("keydown", e => { if (e.key === "Enter") $("#fsgo", p).click(); e.stopPropagation(); });
     let cur = "";
     const load = async path => {
       const d = await api("/api/fs?path=" + encodeURIComponent(path || ""));
@@ -2584,13 +2626,40 @@ bindFilter("#f-nodate", "nodate", "checked");
 bindFilter("#f-dups", "dups", "checked");
 bindFilter("#f-sort", "sort");
 $("#f-reset").onclick = () => {
-  Object.assign(state.filters, { from: "", to: "", kind: "", fav: false, nodate: false, dups: false, sort: "desc" });
+  Object.assign(state.filters, { from: "", to: "", kind: "", camera: "", fav: false, nodate: false, dups: false, sort: "desc" });
+  state.cameraLabel = "";
   ["#f-from", "#f-to", "#f-kind"].forEach(s => ($(s).value = ""));
   ["#f-fav", "#f-nodate", "#f-dups"].forEach(s => ($(s).checked = false));
   $("#f-sort").value = "desc";
   markFilterBtn();
   runSearch();
 };
+// Kamerafilter: Liste der Kameras in der aktuellen Ansicht (Album, Jahr, Ordner, Suche …), nach Marke
+function setCamera(val, label) {
+  state.filters.camera = val;
+  state.cameraLabel = label || "";
+  markFilterBtn();
+  route();
+}
+$("#camsw").onclick = async e => {
+  if (e.target.closest(".x")) return setCamera("", "");
+  const r = $("#camsw").getBoundingClientRect();
+  const p = popover(r.left, r.bottom + 6, `<div class="menu cammenu"><div class="muted" style="padding:8px 12px">Kameras werden gesucht …</div></div>`);
+  const extra = Object.assign({}, state.lastExtra || {});
+  const qs = filterParams(extra);
+  qs.delete("camera");
+  let d;
+  try { d = await api("/api/cameras?" + qs); } catch (err) { closePopover(); return toast(err.message); }
+  if (!document.body.contains(p)) return;
+  const num = n => n.toLocaleString("de-DE");
+  $(".cammenu", p).innerHTML = `<div class="muted" style="padding:6px 12px 4px">Kameras in dieser Ansicht</div>
+    <div data-cam="" data-l="">Alle Kameras</div>
+    ${d.brands.map(b => `<div data-cam="b:${esc(b.brand)}" data-l="${esc(b.brand)} (alle)" class="cambrand"><b>${esc(b.brand)}</b><small>${num(b.count)}</small></div>
+      ${b.models.length > 1 || b.models[0].label !== b.brand ? b.models.map(m => `<div data-cam="m:${esc(m.label)}" data-l="${esc(m.label)}" class="cammodel">${esc(m.label)}<small>${num(m.count)}</small></div>`).join("") : ""}`).join("")}
+    ${d.none ? `<hr><div data-cam="-" data-l="ohne Kameraangabe">ohne Kameraangabe<small>${num(d.none)}</small></div>` : ""}`;
+  $$("[data-cam]", p).forEach(x => x.onclick = () => { closePopover(); setCamera(x.dataset.cam, x.dataset.l); });
+};
+
 // Umschalter Alle | Fotos | Videos: lädt die aktuelle Ansicht (Album, Ordner …) neu, statt zur Zeitleiste zu springen
 $$("#kindsw [data-kind]").forEach(b => b.onclick = () => {
   state.filters.kind = b.dataset.kind;
@@ -2602,6 +2671,9 @@ function markFilterBtn() {
   const f = state.filters;
   $$("#kindsw [data-kind]").forEach(b => b.classList.toggle("on", b.dataset.kind === (f.kind === "raw" ? "photo" : f.kind || "")));
   const n = [f.from, f.to, f.kind, f.fav, f.nodate, f.dups, f.sort !== "desc"].filter(Boolean).length;
+  const cb = $("#camsw");
+  cb.innerHTML = f.camera ? `📷 ${esc(state.cameraLabel || "Kamera")} <span class="x" title="Kamerafilter aufheben">✕</span>` : "📷 Kamera ▾";
+  cb.classList.toggle("on", !!f.camera);
   $("#filterbtn").textContent = n ? `Filter (${n})` : "Filter";
   $("#filterbtn").classList.toggle("primary", !!n);
 }

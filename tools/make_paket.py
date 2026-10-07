@@ -158,6 +158,7 @@ def build(target, zip_it=True):
     for f in ("README.md", "DRITTANBIETER.md", "LICENSE"):
         shutil.copy2(os.path.join(PAKET, f), os.path.join(out, f))
     shutil.copytree(os.path.join(PAKET, "Lizenzen"), os.path.join(out, "Lizenzen"))
+    shutil.copytree(os.path.join(PAKET, "screenshots"), os.path.join(out, "screenshots"))
     for p in EXEC:
         full = os.path.join(out, *p.split("/"))
         os.chmod(full, os.stat(full).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

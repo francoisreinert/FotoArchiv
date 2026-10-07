@@ -421,29 +421,19 @@ def _video_stream(out, W, H, fps, fast=False):
     raise RuntimeError("Kein Video-Encoder verfügbar")
 
 
-def render(d, out_path, job, region=None, preview=False):
-    """Projekt als MP4 (H.264 + AAC, faststart). job: dict mit progress/stop.
-    region=(t0, t1): nur dieser Ausschnitt der Sequenz; preview: klein (640 px) und schnell."""
-    import av
-    import numpy as np
-
+def _prepare(d, preview=False):
+    """Größe, Bildrate, Zeitachse und Katalogzeilen für das Rendern."""
     W, H = FORMATS[d["format"]]
     if preview:
         s = PREVIEW_SIDE / max(W, H)
         W, H = int(W * s) // 2 * 2, int(H * s) // 2 * 2
     elif d.get("uhd"):
         W, H = W * 2, H * 2
-    fps = d["fps"]
     tl, total = timeline(d)
     if not d["clips"] or total <= 0:
         raise RuntimeError("Das Projekt ist leer")
     if total > MAX_MINUTES * 60:
         raise RuntimeError("Höchstens %d Minuten je Video" % MAX_MINUTES)
-    nframes = int(round(total * fps))
-    f0, f1 = 0, nframes
-    if region:
-        f0 = max(0, min(nframes - 1, int(region[0] * fps)))
-        f1 = max(f0 + 1, min(nframes, int(math.ceil(region[1] * fps))))
     con = connect()
     rows = {r[0]: r[1:] for r in con.execute(
         "SELECT id, path, kind, userrot, edit FROM items WHERE id IN (%s)" % ",".join(
@@ -452,62 +442,30 @@ def render(d, out_path, job, region=None, preview=False):
     missing = [c["item"] for c in d["clips"] if c["item"] not in rows]
     if missing:
         raise RuntimeError("%d Clips gibt es nicht mehr im Katalog" % len(missing))
-    # Ton stückweise mischen (je AUDIO_CHUNK Samples), während die Bilder entstehen
-    a_first, a_last = int(round(f0 / fps * SR)), int(round(f1 / fps * SR))
-    pending = np.zeros((2, 0), dtype=np.float32)
-    mixed = a_first
-    astreams = {}
+    return W, H, d["fps"], tl, total, int(round(total * d["fps"])), rows
 
-    def audio_upto(k):
-        """Sicherstellen, dass die Samples bis k (ab Ausschnittbeginn) gemischt bereitliegen."""
-        nonlocal pending, mixed
-        while a_written + pending.shape[1] < k and mixed < a_last:
-            nxt = min(a_last, mixed + AUDIO_CHUNK)
-            part = mix_audio(d, rows, tl, total, mixed / SR, nxt / SR, n=nxt - mixed, streams=astreams)
-            pending = np.concatenate([pending, part], axis=1)
-            mixed = nxt
 
-    a_written = 0
-    out = av.open(out_path, "w", format="mp4", options={"movflags": "+faststart"})  # Zwischendatei heißt .part
+def _frames(d, rows, tl, total, W, H, fps, f0, f1, job):
+    """Die Bilder f0…f1-1 des Films der Reihe nach (PIL-Bilder) – Kamerafahrt, Überblenden, Schwarz, Blenden."""
+    rnd = random.Random(42)
+    rnd_seeds = [rnd.random() for _ in d["clips"]]  # Kamerafahrt je Clip fest, egal ab wo gerendert wird
+    open_src = {}
+    black = Image.new("RGB", (W, H))
+    t_first = f0 / fps
+
+    def src(i):
+        if i not in open_src:
+            c = d["clips"][i]
+            r = rows[c["item"]]
+            if c["kind"] == "video":
+                seek = c["in"] + max(0.0, t_first - tl[i][0])
+                open_src[i] = _Video(to_abs(r[0]), c["in"], r[2], W, H, seek=seek)
+            else:
+                open_src[i] = _Photo((r[0], r[1], r[2], r[3]), W, H, c.get("kb"), random.Random(rnd_seeds[i]))
+        return open_src[i]
+
+    fin, fout = d.get("fadein", 0), d.get("fadeout", 0)
     try:
-        vs = _video_stream(out, W, H, fps, fast=preview)
-        try:
-            ast = out.add_stream("aac", rate=SR, layout="stereo")
-        except TypeError:
-            ast = out.add_stream("aac", rate=SR)
-        ast.bit_rate = 128_000 if preview else 192_000
-        rnd = random.Random(42)
-        rnd_seeds = [rnd.random() for _ in d["clips"]]  # Kamerafahrt je Clip fest, egal ab wo gerendert wird
-        open_src = {}
-        black = Image.new("RGB", (W, H))
-        t_first = f0 / fps
-        job["phase"] = "Bilder rechnen"
-
-        def src(i):
-            if i not in open_src:
-                c = d["clips"][i]
-                r = rows[c["item"]]
-                if c["kind"] == "video":
-                    seek = c["in"] + max(0.0, t_first - tl[i][0])
-                    open_src[i] = _Video(to_abs(r[0]), c["in"], r[2], W, H, seek=seek)
-                else:
-                    open_src[i] = _Photo((r[0], r[1], r[2], r[3]), W, H, c.get("kb"), random.Random(rnd_seeds[i]))
-            return open_src[i]
-
-        def write_audio(upto):
-            nonlocal a_written, pending
-            upto = min(upto, a_last - a_first)
-            audio_upto(upto)
-            while a_written + 1024 <= upto and pending.shape[1] >= 1024:
-                fr = av.AudioFrame.from_ndarray(np.ascontiguousarray(pending[:, :1024]), format="fltp", layout="stereo")
-                fr.sample_rate = SR
-                fr.pts = a_written
-                for p in ast.encode(fr):
-                    out.mux(p)
-                pending = pending[:, 1024:]
-                a_written += 1024
-
-        fin, fout = d.get("fadein", 0), d.get("fadeout", 0)
         for f in range(f0, f1):
             if job.get("stop"):
                 raise RuntimeError("Abgebrochen")
@@ -538,23 +496,201 @@ def render(d, out_path, job, region=None, preview=False):
                 img = Image.blend(black, img, max(0.0, t / fin))
             if fout > 0 and total - t < fout:
                 img = Image.blend(black, img, max(0.0, (total - t) / fout))
-            vf = av.VideoFrame.from_image(img.convert("RGB"))
-            vf.pts = f - f0
-            for p in vs.encode(vf):
-                out.mux(p)
-            write_audio(int(round((f - f0 + 1) / fps * SR)))
+            yield img.convert("RGB")
             job["progress"] = (f - f0 + 1) / (f1 - f0)
-        for p in vs.encode(None):
-            out.mux(p)
-        write_audio(int(round((f1 - f0) / fps * SR)))  # Ton genau so lang wie das Bild
-        for p in ast.encode(None):
-            out.mux(p)
+    finally:
         for s_ in list(open_src.values()):
             s_.close()
+
+
+class _AudioOut:
+    """Ton in die Ausgabedatei: stückweise gemischt (AUDIO_CHUNK) mit offenen Tonquellen, samplegenau."""
+
+    def __init__(self, out, d, rows, tl, total, a_first, a_last, preview):
+        import av
+        import numpy as np
+
+        self.av, self.np = av, np
+        try:
+            self.st = out.add_stream("aac", rate=SR, layout="stereo")
+        except TypeError:
+            self.st = out.add_stream("aac", rate=SR)
+        self.st.bit_rate = 128_000 if preview else 192_000
+        self.out, self.d, self.rows, self.tl, self.total = out, d, rows, tl, total
+        self.first, self.last = a_first, a_last
+        self.pending = np.zeros((2, 0), dtype=np.float32)
+        self.mixed, self.written, self.streams = a_first, 0, {}
+
+    def write(self, upto):
+        """Ton bis Sample upto (ab Ausschnittbeginn) schreiben."""
+        np, av = self.np, self.av
+        upto = min(upto, self.last - self.first)
+        while self.written + self.pending.shape[1] < upto and self.mixed < self.last:
+            nxt = min(self.last, self.mixed + AUDIO_CHUNK)
+            part = mix_audio(self.d, self.rows, self.tl, self.total, self.mixed / SR, nxt / SR, n=nxt - self.mixed,
+                             streams=self.streams)
+            self.pending = np.concatenate([self.pending, part], axis=1)
+            self.mixed = nxt
+        while self.written + 1024 <= upto and self.pending.shape[1] >= 1024:
+            fr = av.AudioFrame.from_ndarray(np.ascontiguousarray(self.pending[:, :1024]), format="fltp", layout="stereo")
+            fr.sample_rate = SR
+            fr.pts = self.written
+            for p in self.st.encode(fr):
+                self.out.mux(p)
+            self.pending = self.pending[:, 1024:]
+            self.written += 1024
+
+    def finish(self):
+        for p in self.st.encode(None):
+            self.out.mux(p)
+
+    def close(self):
+        for st in self.streams.values():
+            st.close()
+
+
+def render(d, out_path, job, region=None, preview=False, frames=None, audio=True, threads=None):
+    """Projekt als MP4 (H.264 + AAC, faststart) in einem Durchgang. job: dict mit progress/stop.
+    region=(t0, t1) oder frames=(f0, f1): nur dieser Ausschnitt; preview: klein (640 px) und schnell;
+    audio=False: nur Bild (Abschnitt für das Rendern auf mehreren Kernen)."""
+    import av
+
+    W, H, fps, tl, total, nframes, rows = _prepare(d, preview)
+    f0, f1 = 0, nframes
+    if frames:
+        f0, f1 = frames
+    elif region:
+        f0 = max(0, min(nframes - 1, int(region[0] * fps)))
+        f1 = max(f0 + 1, min(nframes, int(math.ceil(region[1] * fps))))
+    out = av.open(out_path, "w", format="mp4", options={"movflags": "+faststart"})  # Zwischendatei heißt .part
+    aout = None
+    try:
+        vs = _video_stream(out, W, H, fps, fast=preview)
+        if threads and vs.codec_context.name == "libx264":
+            vs.options = dict(vs.options, threads=str(threads))
+        if audio:
+            aout = _AudioOut(out, d, rows, tl, total, int(round(f0 / fps * SR)), int(round(f1 / fps * SR)), preview)
+        job["phase"] = "Bilder rechnen"
+        for k, img in enumerate(_frames(d, rows, tl, total, W, H, fps, f0, f1, job)):
+            vf = av.VideoFrame.from_image(img)
+            vf.pts = k
+            for p in vs.encode(vf):
+                out.mux(p)
+            if aout:
+                aout.write(int(round((k + 1) / fps * SR)))
+        for p in vs.encode(None):
+            out.mux(p)
+        if aout:
+            aout.write(int(round((f1 - f0) / fps * SR)))  # Ton genau so lang wie das Bild
+            aout.finish()
     finally:
         out.close()
-        for st in astreams.values():
-            st.close()
+        if aout:
+            aout.close()
+
+
+# ---------------------------------------------------- mehrere Kerne ----
+# Der Film wird in Abschnitte geteilt; jeder Prozess rechnet die Bilder eines Abschnitts (nur Bild, eigenes MP4).
+# Danach werden die Abschnitte verlustfrei aneinandergehängt (gleiche Encoder-Einstellungen, jeder beginnt mit
+# einem Schlüsselbild) und der Ton einmal am Stück darübergelegt.
+
+_w = {}
+
+
+def _seg_init(progress, stop):
+    _w["progress"], _w["stop"] = progress, stop
+    try:  # Rechner bleibt bedienbar
+        if os.name == "nt":
+            import ctypes
+
+            ctypes.windll.kernel32.SetPriorityClass(ctypes.windll.kernel32.GetCurrentProcess(), 0x4000)
+        else:
+            os.nice(10)
+    except (AttributeError, OSError):
+        pass
+
+
+class _SegJob:
+    def __init__(self, idx):
+        self.idx = idx
+
+    def get(self, k, default=None):
+        return bool(_w["stop"].value) if k == "stop" else default
+
+    def __setitem__(self, k, v):
+        if k == "progress":
+            _w["progress"][self.idx] = v
+
+
+def _seg_render(args):
+    d, path, f0, f1, threads, idx = args
+    render(d, path, _SegJob(idx), frames=(f0, f1), audio=False, threads=threads)
+    return path
+
+
+def render_parallel(d, out_path, job, workers=None):
+    """Wie render(), aber auf mehreren Kernen. Kurze Filme laufen in einem Durchgang."""
+    import multiprocessing as mp
+
+    import av
+
+    W, H, fps, tl, total, nframes, rows = _prepare(d)
+    cores = os.cpu_count() or 2
+    n = workers or max(1, min(cores, 8, int(total // 8)))
+    if n < 2:
+        return render(d, out_path, job)
+    bounds = [round(nframes * k / n) for k in range(n + 1)]
+    tmp = tempfile.mkdtemp(prefix="FotoArchiv-Render-")
+    ctx = mp.get_context("spawn")
+    progress, stop = ctx.Array("d", n, lock=False), ctx.Value("i", 0, lock=False)
+    segs = [(d, os.path.join(tmp, "teil%02d.mp4" % k), bounds[k], bounds[k + 1], max(1, cores // n), k) for k in range(n)]
+    pool = ctx.Pool(n, initializer=_seg_init, initargs=(progress, stop))
+    try:
+        job["phase"] = "Bilder rechnen (%d Kerne)" % n
+        res = pool.map_async(_seg_render, segs)
+        while not res.ready():
+            res.wait(0.5)
+            job["progress"] = 0.95 * sum(progress) / n
+            if job.get("stop"):
+                stop.value = 1
+                pool.terminate()
+                raise RuntimeError("Abgebrochen")
+        res.get()  # Fehler aus den Prozessen hier melden
+        pool.close()
+        job["phase"] = "Zusammenfügen und Ton"
+        out = av.open(out_path, "w", format="mp4", options={"movflags": "+faststart"})
+        aout = None
+        try:
+            first = av.open(segs[0][1])
+            vout = out.add_stream_from_template(first.streams.video[0])
+            first.close()
+            aout = _AudioOut(out, d, rows, tl, total, 0, int(round(nframes / fps * SR)), False)
+            for _d, path, f0, f1, _t, _i in segs:
+                inp = av.open(path)
+                try:
+                    s = inp.streams.video[0]
+                    off = int(round(f0 / fps / s.time_base))
+                    for pkt in inp.demux(s):
+                        if pkt.dts is None:
+                            continue
+                        pkt.dts += off
+                        if pkt.pts is not None:
+                            pkt.pts += off
+                        pkt.stream = vout
+                        out.mux(pkt)
+                        aout.write(int(float(pkt.dts * s.time_base) * SR))
+                finally:
+                    inp.close()
+                job["progress"] = 0.95 + 0.05 * f1 / nframes
+            aout.write(int(round(nframes / fps * SR)))
+            aout.finish()
+        finally:
+            out.close()
+            if aout:
+                aout.close()
+    finally:
+        pool.terminate()
+        shutil.rmtree(tmp, ignore_errors=True)
 
 
 def preview(d, t0, seconds=8.0):
@@ -652,7 +788,7 @@ def _work():
         t0 = time.time()
         tmp = row[1] + ".part"
         try:
-            render(json.loads(row[0]), tmp, job)
+            render_parallel(json.loads(row[0]), tmp, job)
             os.replace(tmp, row[1])
             con.execute("UPDATE vrenders SET status='fertig', progress=1, finished=?, seconds=?, error=NULL WHERE id=?",
                         (_now(), time.time() - t0, jid))

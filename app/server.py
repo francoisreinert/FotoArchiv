@@ -54,6 +54,47 @@ def is_blocked(h, iid):
     return bool(row and row[0])
 
 
+# --------------------------------------------------------------- Kameras ----
+# EXIF-Namen sind uneinheitlich ("Apple iPhone 11" und "iPhone 11", Firmware-Nummern bei GoPro):
+# Anzeige und Filter laufen über einen bereinigten Modellnamen und die Marke.
+_cam_cache = {}
+
+
+def cam_label(raw):
+    s = re.sub(r"\s+", " ", (raw or "").replace("\x00", "").strip())  # manche Kameras hängen Nullbytes an
+    s = re.sub(r"^Apple (iPhone|iPad|iPod)", r"\1", s)
+    s = re.sub(r"^CASIO COMPUTER CO\.,\s*LTD\.?\s*", "CASIO ", s)
+    s = re.sub(r"\s+[A-Z]{0,3}\d+(\.\d+){2,}$", "", s)  # Firmware-Anhang (z. B. GoPro "FS1.04.01.80.00")
+    return s
+
+
+def cam_brand(label):
+    if re.match(r"(iPhone|iPad|iPod)\b", label):
+        return "Apple"
+    first = label.split(" ")[0]
+    return {"CASIO": "Casio", "SONY": "Sony", "NIKON": "Nikon", "FUJIFILM": "Fujifilm", "OLYMPUS": "Olympus",
+            "PENTAX": "Pentax", "SAMSUNG": "Samsung", "KODAK": "Kodak", "Hewlett-Packard": "HP"}.get(first, first)
+
+
+def _all_cameras():
+    key = db().execute("SELECT COUNT(*), MAX(id) FROM items").fetchone()
+    if _cam_cache.get("key") != key:
+        _cam_cache.update(key=key, raws=[r[0] for r in db().execute("SELECT DISTINCT camera FROM items "
+                                                                    "WHERE camera IS NOT NULL")])
+    return _cam_cache["raws"]
+
+
+def cameras_for(sel):
+    """Filterwert ("m:Modell" oder "b:Marke") → alle Roh-Namen im Katalog."""
+    kind, _, name = sel.partition(":")
+    out = []
+    for raw in _all_cameras():
+        lab = cam_label(raw)
+        if (kind == "m" and lab == name) or (kind == "b" and cam_brand(lab) == name):
+            out.append(raw)
+    return out
+
+
 def build_where(p):
     where, args = [], []
     cfg = common.load_config()
@@ -82,6 +123,14 @@ def build_where(p):
         t = t + "-12-31" if len(t) == 4 else (t + "-31" if len(t) == 7 else t)
         where.append("i.taken <= ?")
         args.append(t + " 23:59:59")
+    cam = p.get("camera")
+    if cam:
+        if cam == "-":
+            where.append("i.camera IS NULL")
+        else:
+            raws = cameras_for(cam)
+            where.append("i.camera IN (%s)" % ",".join("?" * len(raws)) if raws else "0")
+            args += raws
     kind = p.get("kind")
     if kind == "photo":
         where.append("i.kind IN ('photo','raw')")
@@ -184,7 +233,10 @@ def folder_tree():
         parts = folder.split("/") if folder else []
         for d in range(len(parts) + 1):
             path = "/".join(parts[:d])
-            node = tree.setdefault(path, {"path": path, "name": parts[d - 1] if d else "", "direct": 0, "total": 0,
+            label = parts[d - 1] if d else ""
+            if d == 1 and label.startswith(common.SOURCE_PREFIX):
+                label = "🖧 " + label[len(common.SOURCE_PREFIX):]
+            node = tree.setdefault(path, {"path": path, "name": label, "direct": 0, "total": 0,
                                           "children": set(), "cover": covers[folder]})
             node["total"] += n
             if d < len(parts):
@@ -456,6 +508,10 @@ def r_status(h, p):
         "root": common.LIB_ROOT,
         "root_ok": os.path.isdir(common.LIB_ROOT),
         "root_custom": bool(common.load_config().get("library_root")),
+        "sources": [{"name": n, "path": p, "ok": os.path.isdir(p),
+                     "count": c.execute("SELECT COUNT(*) FROM items WHERE path >= ? AND path < ? AND COALESCE(hidden,0) != 2",
+                                        (common.SOURCE_PREFIX + n + "/", common.SOURCE_PREFIX + n + "0")).fetchone()[0]}
+                    for n, p in common.SOURCES.items()],
         "config": common.load_config(),
         "all_folders": common.top_level_folders(),
         "included": common.included_folders(),
@@ -497,6 +553,28 @@ def r_query(h, p):
         if p.get("q") or p.get("persons"):
             p["_hide_private"] = 1
     h.send_json(query_items(p))
+
+
+def r_cameras(h, p):
+    """Kameras in der aktuellen Ansicht (gleiche Filter wie /api/query, nur ohne Kamera), nach Marke gruppiert."""
+    p = dict(p)
+    p.pop("camera", None)
+    if locked(h):
+        p["_hide_private"] = 1
+    where, args = build_where(p)
+    brands, none = {}, 0
+    for raw, n in db().execute("SELECT i.camera, COUNT(*) FROM items i%s GROUP BY i.camera" % where, args):
+        if raw is None:
+            none += n
+            continue
+        lab = cam_label(raw)
+        b = brands.setdefault(cam_brand(lab), {"brand": cam_brand(lab), "count": 0, "models": {}})
+        b["count"] += n
+        b["models"][lab] = b["models"].get(lab, 0) + n
+    out = sorted(({"brand": b["brand"], "count": b["count"],
+                   "models": sorted(({"label": k, "count": v} for k, v in b["models"].items()), key=lambda x: -x["count"])}
+                  for b in brands.values()), key=lambda x: -x["count"])
+    h.send_json({"brands": out, "none": none})
 
 
 def r_years(h, p):
@@ -2102,6 +2180,89 @@ def r_vjob_reveal(h, p, jid):
     h.send_json({"ok": True})
 
 
+# ------------------------------------------------- Weitere Fotoordner ----
+
+def _source_check(path, name=None):
+    """Fehlertext, wenn der Ordner nicht als weitere Quelle taugt (sonst None)."""
+    if not path or not os.path.isdir(path):
+        return "Ordner nicht gefunden (bei einem NAS: ist es eingeschaltet und verbunden?)"
+    nc = lambda x: os.path.normcase(os.path.abspath(x)).rstrip("\\/")
+    inside = lambda a, b: a == b or a.startswith(b + os.sep)
+    p = nc(path)
+    if inside(p, nc(common.LIB_ROOT)) or inside(nc(common.LIB_ROOT), p):
+        return "Liegt im Haupt-Fotoordner (oder umgekehrt) – die Fotos wären doppelt. Unterordner des Haupt-Fotoordners werden ohnehin eingelesen."
+    if inside(p, nc(common.BASE_DIR)) or inside(nc(common.BASE_DIR), p):
+        return "Der FotoArchiv-Ordner selbst kann kein Fotoordner sein."
+    for n, other in common.SOURCES.items():
+        if n != name and (inside(p, nc(other)) or inside(nc(other), p)):
+            return "Überschneidet sich mit dem Fotoordner „%s“." % n
+    return None
+
+
+def _source_name(raw):
+    name = re.sub(r"[\\/@:*?\"<>|]", "", (raw or "").strip())[:40].strip()
+    return name or None
+
+
+def _save_sources(fn):
+    cfg = common.load_config()
+    lst = cfg.get("sources") or []
+    lst = fn(lst)
+    cfg["sources"] = lst
+    common.save_config(cfg)
+    common.reload_sources()
+    _tree_cache.clear()
+
+
+def r_source_add(h, p):
+    b = h.body()
+    path = (b.get("path") or "").strip()
+    name = _source_name(b.get("name") or os.path.basename(path.rstrip("\\/")) or "Fotos")
+    if not name:
+        return h.send_json({"error": "Bitte einen Namen angeben"}, 400)
+    if name.lower() in {n.lower() for n in common.SOURCES}:
+        return h.send_json({"error": "Den Namen „%s“ gibt es schon" % name}, 400)
+    err = _source_check(path)
+    if err:
+        return h.send_json({"error": err}, 400)
+    _save_sources(lambda lst: lst + [{"name": name, "path": common.path_setting(path)}])
+    h.send_json({"ok": True, "name": name})
+
+
+def r_source_path(h, p):
+    """Neuer Ort für eine Quelle (z. B. anderer Laufwerksbuchstabe, Mac) – Fotos, Alben usw. bleiben erhalten."""
+    b = h.body()
+    name, path = b.get("name"), (b.get("path") or "").strip()
+    if name not in common.SOURCES:
+        return h.send_error(404)
+    err = _source_check(path, name)
+    if err:
+        return h.send_json({"error": err}, 400)
+    _save_sources(lambda lst: [dict(s, path=common.path_setting(path)) if s.get("name") == name else s for s in lst])
+    h.send_json({"ok": True})
+
+
+def r_source_delete(h, p):
+    """Quelle entfernen: ihre Einträge verschwinden aus dem Katalog, die Dateien bleiben unangetastet."""
+    import indexer
+
+    name = h.body().get("name")
+    if name not in common.SOURCES:
+        return h.send_error(404)
+    if indexer.PROGRESS.running:
+        return h.send_json({"error": "Bitte warten, bis das Einlesen fertig ist"}, 409)
+    c = db()
+    lo, hi = common.SOURCE_PREFIX + name + "/", common.SOURCE_PREFIX + name + "0"
+    ids = [r[0] for r in c.execute("SELECT id FROM items WHERE path >= ? AND path < ?", (lo, hi))]
+    for ch in _chunks(ids):
+        ph = ",".join("?" * len(ch))
+        c.execute("DELETE FROM album_items WHERE item_id IN (%s)" % ph, ch)
+    indexer.remove_items(c, ids)
+    PREVIEWS.delete(ids)
+    _save_sources(lambda lst: [s for s in lst if s.get("name") != name])
+    h.send_json({"ok": True, "removed": len(ids)})
+
+
 def r_quit(h, p):
     h.send_json({"ok": True})
     threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0)), daemon=True).start()
@@ -2184,6 +2345,7 @@ ROUTES = [
     ("POST", r"/api/events/(\d+)", r_event_update),
     ("POST", r"/api/events/(\d+)/delete", r_event_delete),
     ("GET", r"/api/map", r_map),
+    ("GET", r"/api/cameras", r_cameras),
     ("GET", r"/api/item/(\d+)", r_item),
     ("POST", r"/api/item/(\d+)/fav", r_fav),
     ("POST", r"/api/item/(\d+)/rotate", r_rotate),
@@ -2209,6 +2371,9 @@ ROUTES = [
     ("GET", r"/edit-src/(\d+)", r_edit_src),
     ("POST", r"/api/item/(\d+)/edit", r_edit_save),
     ("POST", r"/api/library", r_library),
+    ("POST", r"/api/sources", r_source_add),
+    ("POST", r"/api/sources/path", r_source_path),
+    ("POST", r"/api/sources/delete", r_source_delete),
     ("GET", r"/api/vprojects", r_vprojects),
     ("POST", r"/api/vprojects", r_vproject_create),
     ("GET", r"/api/vprojects/(\d+)", r_vproject),

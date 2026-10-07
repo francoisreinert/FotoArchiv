@@ -466,6 +466,23 @@ def dhash(im):
     return v - (1 << 64) if v >= (1 << 63) else v
 
 
+_GOPRO_FW = {"HD3": "HERO3", "HD4": "HERO4", "HX": "HERO4 Session", "HD5": "HERO5", "HD6": "HERO6 Black",
+             "HD7": "HERO7", "HD8": "HERO8 Black", "HD9": "HERO9 Black", "H10": "HERO10 Black", "H11": "HERO11 Black",
+             "H12": "HERO12 Black", "H13": "HERO13 Black", "FS": "Fusion"}
+
+
+def video_camera(md):
+    """Kamera aus Video-Metadaten, die nicht im Apple-Format stehen (z. B. GoPro: Firmware "HD9.01…")."""
+    handler = " ".join(str(v) for k, v in md.items() if k in ("handler_name", "encoder"))
+    fw = str(md.get("firmware") or "")
+    if "gopro" in handler.lower() or fw[:2] in ("HD", "H1", "HX", "FS"):
+        for pre, name in sorted(_GOPRO_FW.items(), key=lambda kv: -len(kv[0])):
+            if fw.startswith(pre):
+                return "GoPro " + name
+        return "GoPro"
+    return None
+
+
 def make_preview(path, kind, max_side=2560, userrot=0, edit=None):
     if kind == "video":
         im = rotate_cw(video_frame(path)[0], userrot or 0)
@@ -515,7 +532,7 @@ def video_frame(path):
         loc = _iso6709(md.get("com.apple.quicktime.location.iso6709") or md.get("location"))
         if loc and (abs(loc[0]) > 0.0001 or abs(loc[1]) > 0.0001):
             meta["lat"], meta["lon"] = loc
-        model = md.get("com.apple.quicktime.model")
+        model = md.get("com.apple.quicktime.model") or video_camera(md)
         if model:
             meta["camera"] = model
         target = min(1.0, (meta.get("duration") or 0) * 0.1)

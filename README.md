@@ -6,12 +6,24 @@ Fotoverwaltung im Browser – ohne Cloud, ohne Abo, ohne Installation. Läuft un
 direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Fotos, wo sie sind.
 
 - Zeitleiste, Kalender, Ordner, Karte, Favoriten, Volltextsuche (Ort, Monat, Kamera, Stichwort …)
+- Filter nach Fotos/Videos und **Kamera** (z. B. alle GoPro-Aufnahmen), auch innerhalb von Alben, Jahren, Ordnern
+- Mehrere Fotoordner: externe Platten, **NAS**, lokale Ordner – gemeinsam durchsuchbar
+- **Fotobearbeitung** (zuschneiden, begradigen, Licht, Farbe, Tiefen/Lichter – Original bleibt unverändert)
+- **Videoschnitt** mit Zeitleiste, Übergängen, Originalton und Musik; Rendern auf allen Prozessorkernen
 - **Gesichtserkennung** auf dem eigenen Computer: Gesichter werden gruppiert, einmal benennen genügt
 - Alben, Ereignisse, private (passwortgeschützte) Fotos
 - **Duplikate** finden und aufräumen, Papierkorb zum Wiederherstellen
 - Import aus iCloud, Google Takeout, Ordnern, ZIP-Dateien
 - Diashow (auch als Video), Teilen, aufs Handy per QR-Code, Samsung-Fernseher / The Frame
 - Übernahme aus Mylio (optional)
+
+## So sieht es aus
+
+| Übersicht | Karte |
+|---|---|
+| ![Übersicht mit Statistik und Fotos pro Jahr](screenshots/uebersicht.png) | ![Karte mit Fotos nach Ort](screenshots/karte.png) |
+| **Videoschnitt** | **Bibliothek mit weiteren Fotoordnern (NAS)** |
+| ![Videoschnitt mit Projekten und Renderliste](screenshots/videoschnitt.png) | ![Bibliothek: Fotoordner, NAS, Katalog](screenshots/bibliothek.png) |
 
 ## Herunterladen und starten
 

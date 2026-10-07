@@ -43,6 +43,40 @@ def root_setting(path):
 
 
 LIB_ROOT = _library_root()
+
+# Weitere Fotoordner (NAS, zweite Platte, lokaler Ordner): config.json "sources" = [{"name", "path"}].
+# Ihre Fotos stehen im Katalog als "@Name/Unterordner/Datei" – nur hier wird der echte Ort eingesetzt.
+# Ändert sich der Ort (anderer Laufwerksbuchstabe, Mac), reicht ein neuer Pfad; der Katalog bleibt gleich.
+SOURCE_PREFIX = "@"
+SOURCES = {}  # Name -> absoluter Pfad
+
+
+def _resolve(p):
+    return os.path.normpath(p if os.path.isabs(p) else os.path.join(BASE_DIR, p))
+
+
+def reload_sources():
+    try:
+        with open(CONFIG_PATH, encoding="utf-8") as f:
+            lst = json.load(f).get("sources") or []
+    except (OSError, ValueError):
+        lst = []
+    SOURCES.clear()
+    for s in lst:
+        if s.get("name") and s.get("path"):
+            SOURCES[s["name"]] = _resolve(s["path"])
+
+
+reload_sources()
+
+
+def path_setting(path):
+    """Pfad für config.json: auf demselben Laufwerk relativ zu FotoArchiv (portabel), sonst absolut (z. B. NAS)."""
+    path = os.path.abspath(path)
+    try:
+        return os.path.relpath(path, BASE_DIR)
+    except ValueError:
+        return path
 MYLIO_JSON = os.path.join(DATA_DIR, "mylio.json")
 CATALOG_DB = os.path.join(DATA_DIR, "catalog.db")
 THUMBS_DB = os.path.join(DATA_DIR, "thumbs.db")
@@ -85,13 +119,40 @@ def norm(s):
 
 
 def to_rel(abspath):
+    if SOURCES:
+        a = os.path.normcase(abspath)
+        for name, root in SOURCES.items():
+            r = os.path.normcase(root)
+            if a == r or a.startswith(r.rstrip(os.sep) + os.sep):
+                rest = os.path.relpath(abspath, root).replace(os.sep, "/")
+                return norm(SOURCE_PREFIX + name + ("" if rest == "." else "/" + rest))
     return norm(os.path.relpath(abspath, LIB_ROOT).replace(os.sep, "/"))
 
 
+def split_source(rel):
+    """("Name", "rest") für Pfade weiterer Fotoordner, sonst (None, rel)."""
+    if rel.startswith(SOURCE_PREFIX):
+        name, _, rest = rel[len(SOURCE_PREFIX):].partition("/")
+        return name, rest
+    return None, rel
+
+
+def root_of(rel):
+    """Basisordner, in dem rel liegt (Haupt-Fotoordner oder weitere Quelle)."""
+    name, _ = split_source(rel)
+    if name is None:
+        return LIB_ROOT
+    # unbekannte Quelle: ein Ort, der sicher nicht existiert (Fotos gelten als "nicht erreichbar", nicht als gelöscht)
+    return SOURCES.get(name) or os.path.join(BASE_DIR, "_unbekannte_quelle_", name)
+
+
 def to_abs(rel):
-    p = os.path.join(LIB_ROOT, *rel.split("/"))
+    name, rest = split_source(rel)
+    base = root_of(rel)
+    parts = [x for x in rest.split("/") if x] if name is not None else rel.split("/")
+    p = os.path.join(base, *parts)
     if not os.path.exists(p):
-        alt = os.path.join(LIB_ROOT, *unicodedata.normalize("NFD", rel).split("/"))
+        alt = os.path.join(base, *unicodedata.normalize("NFD", "/".join(parts)).split("/"))
         if os.path.exists(alt):
             return alt
     return p
@@ -130,11 +191,15 @@ def save_config(cfg):
 
 
 def included_folders(cfg=None):
+    """Oberste Ordner, die eingelesen werden – plus alle weiteren Fotoordner ("@Name"), auch wenn sie gerade
+    nicht erreichbar sind: das Einlesen überspringt sie dann, ihre Fotos bleiben aber im Katalog."""
     cfg = cfg or load_config()
     if cfg.get("folders"):
-        return [f for f in cfg["folders"] if os.path.isdir(to_abs(f))]
-    excl = {x.lower() for x in cfg.get("excluded_folders") or []}
-    return [f for f in top_level_folders() if f.lower() not in excl]
+        main = [f for f in cfg["folders"] if os.path.isdir(to_abs(f))]
+    else:
+        excl = {x.lower() for x in cfg.get("excluded_folders") or []}
+        main = [f for f in top_level_folders() if f.lower() not in excl]
+    return main + [SOURCE_PREFIX + n for n in SOURCES]
 
 
 SCHEMA = """

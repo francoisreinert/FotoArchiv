@@ -10,7 +10,7 @@ import json
 import os
 
 import common
-from common import LIB_ROOT, PREVIEWS, to_abs
+from common import PREVIEWS, split_source, to_abs
 
 TRASH_NAME = "FotoArchiv-Papierkorb"
 TRASHED = 2  # Wert in items.hidden
@@ -20,8 +20,19 @@ JUNK = {"thumbs.db", "desktop.ini", ".ds_store"}
 JUNK_EXT = {"thm", "lrv"}
 
 
-def trash_root():
-    return os.path.join(LIB_ROOT, TRASH_NAME)
+def trash_roots():
+    """Ein Papierkorb je Fotoordner (Haupt-Fotoordner und weitere Quellen) – Löschen verschiebt nur auf derselben Platte."""
+    return [os.path.join(common.LIB_ROOT, TRASH_NAME)] + [os.path.join(r, TRASH_NAME) for r in common.SOURCES.values()]
+
+
+def trash_rel(rel):
+    """Katalogpfad → Pfad im Papierkorb desselben Fotoordners ("@NAS/x.jpg" → "@NAS/FotoArchiv-Papierkorb/x.jpg")."""
+    name, rest = split_source(rel)
+    return (common.SOURCE_PREFIX + name + "/" if name is not None else "") + TRASH_NAME + "/" + rest
+
+
+def in_trash(rel):
+    return split_source(rel)[1].startswith(TRASH_NAME + "/")
 
 
 def _chunks(ids, n=500):
@@ -78,7 +89,7 @@ def _sidecars(con, path, keep_ids):
 
 
 def _move(src_rel, dst_rel):
-    src, dst = to_abs(src_rel), os.path.join(LIB_ROOT, *dst_rel.split("/"))
+    src, dst = to_abs(src_rel), to_abs(dst_rel)
     os.makedirs(os.path.dirname(dst), exist_ok=True)
     os.replace(src, dst)
 
@@ -95,11 +106,11 @@ def move_to_trash(con, ids):
         for iid, path in rows:
             side = []
             try:
-                dst = _free_target(TRASH_NAME + "/" + path)
+                dst = _free_target(trash_rel(path))
                 if os.path.exists(to_abs(path)):
                     _move(path, dst)
                 for s in _sidecars(con, path, idset):
-                    sd = _free_target(TRASH_NAME + "/" + s)
+                    sd = _free_target(trash_rel(s))
                     try:
                         _move(s, sd)
                         side.append([sd, s])
@@ -144,7 +155,8 @@ def restore(con, ids):
                         (orig, iid))
             done += 1
         con.commit()
-    _cleanup_dirs(trash_root())
+    for r in trash_roots():
+        _cleanup_dirs(r)
     return done, errors
 
 
@@ -158,7 +170,7 @@ def purge(con, ids=None):
     for ch in _chunks(list(ids)):
         for iid, path, side in con.execute("SELECT id, path, trash_side FROM items WHERE hidden=2 AND id IN (%s)"
                                            % ",".join("?" * len(ch)), ch).fetchall():
-            if not path.startswith(TRASH_NAME + "/"):  # Sicherheitsnetz: nie außerhalb des Papierkorbs löschen
+            if not in_trash(path):  # Sicherheitsnetz: nie außerhalb eines Papierkorbs löschen
                 continue
             try:
                 if os.path.exists(to_abs(path)):
@@ -179,8 +191,10 @@ def purge(con, ids=None):
     indexer.remove_items(con, gone)
     PREVIEWS.delete(gone)
     if not con.execute("SELECT 1 FROM items WHERE hidden=2 LIMIT 1").fetchone():
-        _purge_leftovers(trash_root())  # z. B. Begleitkram aus gelöschten Ordnern
-    _cleanup_dirs(trash_root())
+        for r in trash_roots():
+            _purge_leftovers(r)  # z. B. Begleitkram aus gelöschten Ordnern
+    for r in trash_roots():
+        _cleanup_dirs(r)
     return len(gone), errors
 
 
@@ -199,7 +213,7 @@ def trash_folder(con, folder):
             rel = common.to_rel(os.path.join(dirpath, f))
             if low in JUNK or low.startswith("._") or low.rsplit(".", 1)[-1] in JUNK_EXT:
                 try:
-                    _move(rel, _free_target(TRASH_NAME + "/" + rel))
+                    _move(rel, _free_target(trash_rel(rel)))
                 except OSError:
                     others.append(rel)
             else:
