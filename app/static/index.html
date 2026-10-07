@@ -1,0 +1,93 @@
+<!doctype html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>FotoArchiv</title>
+<link rel="stylesheet" href="/style.css">
+<link rel="icon" href="/icon.svg" type="image/svg+xml">
+<link rel="apple-touch-icon" href="/icon.png">
+</head>
+<body>
+<header id="top">
+  <a class="brand" href="#/start">FotoArchiv</a>
+  <div id="searchbox">
+    <div id="chips"></div>
+    <input id="search" type="search" placeholder="Suchen: Ort, Ordner, Jahr, Monat, Kamera, Stichwort …" autocomplete="off">
+    <div id="suggest" hidden></div>
+  </div>
+  <button id="filterbtn" class="ghost" title="Filter">Filter</button>
+  <button id="lockbtn" class="ghost" hidden></button>
+  <div id="indexstatus" hidden></div>
+</header>
+<div id="filters" hidden>
+  <label>Von <input type="date" id="f-from"></label>
+  <label>Bis <input type="date" id="f-to"></label>
+  <label>Art
+    <select id="f-kind"><option value="">Alles</option><option value="photo">Fotos</option><option value="video">Videos</option><option value="raw">nur RAW</option></select>
+  </label>
+  <label><input type="checkbox" id="f-fav"> nur Favoriten</label>
+  <label><input type="checkbox" id="f-nodate"> ohne sicheres Datum</label>
+  <label><input type="checkbox" id="f-dups"> Duplikate &amp; RAW-Kopien zeigen</label>
+  <label>Sortierung
+    <select id="f-sort"><option value="desc">Neueste zuerst</option><option value="asc">Älteste zuerst</option></select>
+  </label>
+  <button id="f-reset" class="ghost">Zurücksetzen</button>
+</div>
+<div id="layout">
+  <nav id="side">
+    <a href="#/start" data-nav="start">Übersicht</a>
+    <a href="#/fotos" data-nav="fotos">Fotos</a>
+    <a href="#/kalender" data-nav="kalender">Kalender</a>
+    <a href="#/alben" data-nav="alben">Alben &amp; Ereignisse</a>
+    <a href="#/ordner" data-nav="ordner">Ordner</a>
+    <a href="#/personen" data-nav="personen">Personen</a>
+    <a href="#/karte" data-nav="karte">Karte</a>
+    <a href="#/favoriten" data-nav="favoriten">Favoriten</a>
+    <a href="#/import" data-nav="import">Import</a>
+    <a href="#/einstellungen" data-nav="einstellungen">Bibliothek</a>
+    <a href="#/duplikate" data-nav="duplikate">Duplikate</a>
+    <a href="#/papierkorb" data-nav="papierkorb">Papierkorb</a>
+    <div id="years"></div>
+  </nav>
+  <main id="main"></main>
+</div>
+<div id="viewer" hidden>
+  <div class="v-stage">
+    <div class="v-media"></div>
+    <button class="v-nav v-prev" title="Zurück (←)">‹</button>
+    <button class="v-nav v-next" title="Weiter (→)">›</button>
+  </div>
+  <div class="v-bar">
+    <button class="v-close" title="Schließen (Esc)">✕</button>
+    <span class="v-title"></span>
+    <span class="v-spacer"></span>
+    <button class="v-rotl" title="Nach links drehen">⟲</button>
+    <button class="v-rotr" title="Nach rechts drehen (R)">⟳</button>
+    <button class="v-tv" title="Auf dem Fernseher / Frame zeigen">📺</button>
+    <button class="v-faces" title="Gesichter zeigen (G)">Gesichter</button>
+    <button class="v-fav" title="Favorit (F)">☆</button>
+    <button class="v-del" title="In den Papierkorb (Entf)">🗑</button>
+    <button class="v-info" title="Informationen (I)">Info</button>
+  </div>
+  <aside class="v-panel" hidden></aside>
+</div>
+<div id="selbar" hidden>
+  <button class="ghost sb-close" title="Auswahl aufheben (Esc)">✕</button>
+  <b class="sb-count"></b>
+  <button class="ghost sb-all" title="Alle auswählen (Strg+A)">Alle</button>
+  <span class="sb-spacer"></span>
+  <button data-act="show" title="Diashow mit den markierten Fotos">▶ Diashow</button>
+  <button data-act="share" title="Exportieren / teilen">Teilen …</button>
+  <button data-act="fav" title="Als Favorit markieren">★ Favorit</button>
+  <button data-act="album" title="Zu einem Album hinzufügen">+ Album</button>
+  <button data-act="event" title="Ereignis aus diesen Fotos erstellen">+ Ereignis</button>
+  <button data-act="person" title="Person zuordnen">+ Person</button>
+  <button data-act="tag" title="Stichwort hinzufügen">+ Stichwort</button>
+  <button data-act="more" title="Weitere Aktionen">Mehr …</button>
+</div>
+<div id="tvbar" hidden></div>
+<div id="toast" hidden></div>
+<script src="/app.js"></script>
+</body>
+</html>

@@ -1,0 +1,171 @@
+FotoArchiv – Fotoverwaltung im Browser, ohne Cloud und ohne Abo
+===============================================================
+
+STARTEN
+  Den Ordner "FotoArchiv" an einen festen Platz legen – z. B. "Dokumente" oder auf die externe
+  Festplatte mit den Fotos (dann funktioniert alles auch an anderen Computern).
+
+  Windows:  Doppelklick auf "Verknüpfung anlegen (Windows).cmd" – FotoArchiv erscheint mit Icon
+            auf dem Desktop und im Startmenü. Oder direkt "FotoArchiv starten (Windows).cmd".
+            Fragt Windows nach ("Der Computer wurde durch Windows geschützt"):
+            "Weitere Informationen" > "Trotzdem ausführen".
+  Mac:      Doppelklick auf "FotoArchiv.app" (oder "FotoArchiv starten (Mac).command").
+            Beim allerersten Mal Rechtsklick > "Öffnen", weil die App nicht von Apple signiert ist.
+
+  Beim ersten Start fragt FotoArchiv nach dem Fotoordner (z. B. "Bilder" oder die externe Platte).
+  Danach "Bibliothek aktualisieren" – das erste Einlesen dauert je nach Menge einige Stunden
+  (Vorschaubilder, Orte, Gesichter); man kann FotoArchiv währenddessen schon benutzen.
+
+  Die Oberfläche öffnet sich im Browser (http://127.0.0.1:8765). Das schwarze
+  Fenster muss offen bleiben, solange du FotoArchiv nutzt. Zum Beenden das Fenster
+  schließen oder unter "Bibliothek" auf "FotoArchiv beenden" klicken.
+
+  Beim ersten Start auf einem neuen Computer wird einmalig (ca. 1 Minute) die
+  Laufzeitumgebung in den Benutzerordner entpackt:
+    Windows: %LOCALAPPDATA%\FotoArchiv      Mac: ~/Library/Application Support/FotoArchiv
+  Es wird nichts installiert, keine Admin-Rechte nötig, kein Internet nötig.
+  Alles Eigene (Katalog, Vorschaubilder, Personen, Alben) liegt im Ordner FotoArchiv\data.
+
+FUNKTIONEN
+  Übersicht    Startseite: Zahl der Fotos, Videos, Personen, Alben, Ordner, Orte, Duplikate,
+               Fotos pro Jahr (Klick auf ein Jahr springt dorthin), häufigste Personen und Orte
+  Fotos        Zeitleiste aller Fotos und Videos, nach Monaten gruppiert, Jahre links zum Springen
+  Kalender     Jahre x Monate, mit Ereignisnamen (z. B. "Sommerurlaub 2024")
+  Alben &      Eigene Alben (auch Unteralben) und Ereignisse. Ereignisse sind Zeiträume: neue Fotos aus
+  Ereignisse   diesem Zeitraum gehören automatisch dazu.
+  Suche        Freitext: Ordnernamen, Dateinamen, Jahr, Monat ("Juli 2019"), Jahreszeit ("Sommer"),
+               Ort ("Paris", "Italien"), Kamera ("iPhone"), Stichwörter, Beschreibungen.
+               Personen: Namen tippen und aus der Liste wählen (mehrere = Fotos mit allen zusammen).
+               "Filter": Zeitraum, nur Videos/Fotos, Favoriten, Fotos ohne sicheres Datum.
+  Ordner       Die Ordnerstruktur des Fotoordners
+  Personen     Gesichter werden beim Einlesen in allen Fotos gefunden. So geht's los:
+               - "Unbekannte Gesichter benennen": ähnliche Gesichter sind schon gruppiert –
+                 einmal den Namen eintippen, danach "Erkennung aktualisieren"
+               - FotoArchiv erkennt die Person dann in allen anderen Fotos selbst
+               - "Vorschläge prüfen": unsichere Treffer bestätigen/ablehnen -> Erkennung wird besser
+               - "Unbekannte Gesichter benennen": ähnliche Gesichter ohne Namen in Gruppen
+               - Im Betrachter Taste G: Gesichtsrahmen anklicken zum Benennen/Korrigieren
+               - Nach vielen Änderungen: "Erkennung aktualisieren"
+  Karte        Fotos mit GPS auf der Karte (braucht Internet für die Kartenbilder)
+  Favoriten    Stern im Betrachter (Taste F); Bewertungen ab 4 Sternen (z. B. aus Lightroom) zählen auch
+  Bibliothek   Neue Fotos einlesen ("Bibliothek aktualisieren"), Ordnerauswahl
+  Duplikate    Gleiche Fotos/Videos nebeneinander; die bessere Datei behalten, Rest in den Papierkorb
+               (siehe DUPLIKATE)
+  Papierkorb   Gelöschte Fotos, Videos und Ordner (siehe LÖSCHEN)
+
+  Betrachter:  Pfeiltasten blättern, I = Infos, G = Gesichter, F = Favorit, R = drehen, Esc = schließen,
+               Entf = in den Papierkorb
+               Drehen ändert nur die Anzeige in FotoArchiv, nie die Datei.
+
+MYLIO ÜBERNEHMEN (nur wer bisher Mylio benutzt hat)
+  Personen, Gesichter, Ereignisse, Alben, Bewertungen und Beschreibungen lassen sich aus Mylio
+  übernehmen, solange Mylio noch auf dem Computer ist: tools\mylio_export.py mit der
+  FotoArchiv-Python-Umgebung ausführen (findet den Mylio-Katalog selbst), danach
+  "Bibliothek aktualisieren". Mylio wird dabei nur gelesen.
+
+FOTOS BEARBEITEN UND ORDNEN
+  Markieren: Haken oben links im Foto (Shift = Bereich, Strg/Cmd = einzeln, "Monat auswählen",
+  Strg+A = alle). Oben erscheint eine Leiste: Favorit, + Album, + Ereignis, + Person, + Stichwort,
+  "Mehr …": drehen, Datum ändern, Person/Stichwort entfernen, aus Album entfernen, Titelbild,
+  ausblenden. Ausgeblendete Fotos: Alben & Ereignisse › Ausgeblendete Fotos.
+  Alle Änderungen stehen nur im Katalog – die Bilddateien selbst werden nie verändert.
+
+LÖSCHEN
+  - Fotos/Videos: markieren und Taste Entf (oder "Mehr …" › In den Papierkorb), im Betrachter
+    Entf oder 🗑. Ausgeblendete Duplikate und RAW-Partner (IMG_1.CR2 zu IMG_1.JPG) kommen mit,
+    ebenso XMP/AAE-Begleitdateien.
+  - Ordner: unter Ordner den Ordner öffnen › "Ordner löschen" (mit allen Unterordnern). Andere
+    Dateien (z. B. Texte) bleiben im Ordner liegen und werden gemeldet.
+  - Alben/Ereignisse: "Album löschen" bzw. "Löschen"; mit Haken landen auch die Fotos im Papierkorb.
+  - Personen: auf der Seite der Person "Löschen" (nur der Name, Gesichter bleiben).
+  Der Papierkorb ist der Ordner "FotoArchiv-Papierkorb" im Fotoordner: Dateien
+  werden nur dorthin verschoben (gleiche Ordnerstruktur, kein Zusatzplatz). Wiederherstellen legt
+  sie an den alten Platz zurück – Alben, Personen, Datum usw. bleiben erhalten. Erst "Papierkorb
+  leeren" oder "Endgültig löschen" entfernt die Dateien wirklich von der Platte.
+
+DUPLIKATE
+  Duplikate = gleiche Aufnahme (gleiche Zeit, Auflösung und praktisch gleicher Bildinhalt), z. B. dieselbe
+  Datei in zwei verschiedenen Ordnern. Seite "Duplikate": je Gruppe sind die Dateien nebeneinander,
+  grün = wird behalten. Vorschlag: höhere Auflösung, mit RAW, Originalformat (HEIC/TIFF), größere Datei
+  (weniger komprimiert); bei identischen Dateien der Ordner aus "Bei gleicher Qualität behalten in",
+  dann der ursprüngliche Dateiname. Andere Datei anklicken = diese behalten, Klick aufs Bild = groß ansehen.
+  "Übernehmen" legt die roten in den Papierkorb; Alben, Personen, Favorit, Stichwörter, GPS gehen auf
+  die behaltene Datei über. "Kein Duplikat" (z. B. Serienbilder): alle bleiben dauerhaft getrennt.
+  "Alle … Gruppen übernehmen" arbeitet im Hintergrund alle Vorschläge ab (anhaltbar).
+
+PRIVAT
+  Bibliothek › Privat › "Passwort festlegen". Danach lassen sich Fotos (markieren › "Mehr …"
+  oder im Betrachter), Alben (inkl. Unteralben) und Ereignisse als privat markieren.
+  Private Fotos zeigen überall nur ein Schloss – auch in Zeitleiste, Kalender, Ordnern, Personen,
+  Karte; in Suchergebnissen tauchen sie gar nicht auf. Klick aufs Schloss oder oben auf
+  "🔒 Privat gesperrt" fragt das Passwort ab. Nach 30 Minuten ohne Nutzung wird wieder gesperrt.
+  Schutz nur in der Oberfläche – die Dateien auf der Platte bleiben unverändert und lesbar.
+  Das Passwort lässt sich nicht wiederherstellen.
+
+DIASHOW, VIDEO UND TEILEN
+  Diashow: "▶ Diashow" oben in jeder Ansicht (Ereignis, Album, Suche) oder für markierte Fotos.
+           Dauer, Kamerafahrt/Überblenden, Zufall, Musik. Tasten: Leertaste Pause, Pfeile, Esc.
+           Musik: MP3/M4A-Dateien in den Ordner FotoArchiv\Musik legen (oder eigene Datei wählen).
+  Video:   im Diashow-Dialog "Als Video speichern" – MP4 in 1080p mit Musik auf den Schreibtisch
+           (Ordner "FotoArchiv Export"), z. B. für WhatsApp oder ein geteiltes iCloud-Album.
+  Teilen:  markierte Fotos › "Teilen …": JPEG klein (WhatsApp/Mail), JPEG groß oder Originale,
+           wahlweise als ZIP. Der Ordner öffnet sich – von dort in ein geteiltes iCloud-Album,
+           WhatsApp, Mail usw. ziehen. Am Mac auch direkt als Album in die Fotos-App.
+  Direkt in iCloud hochladen geht nicht: Apple bietet dafür keine Schnittstelle.
+  Aufs Handy: "Teilen …" › "📱 Aufs Handy" zeigt einen QR-Code – mit der Handykamera scannen
+           (gleiches WLAN), Fotos speichern. Link 15 Minuten gültig.
+
+FERNSEHER & SAMSUNG THE FRAME
+  Einrichten: Bibliothek › Fernseher › "Fernseher suchen" (oder IP eintragen) und übernehmen.
+  Beim ersten Mal fragt Windows nach der Firewall: "Zugriff zulassen" für private Netzwerke.
+  📺 Auf dem Fernseher: "Teilen …" oder im Diashow-Dialog. "Nahtlos" bereitet die Diashow kurz
+     als ein Video vor (mit Überblendung, Musik, Videos) – die Player-Leiste erscheint nur am
+     Anfang. "Sofort" zeigt Foto für Foto ohne Vorbereitung. Steuerung unten rechts.
+  🖼 Frame-Kunstmodus: Fotos werden als 4K-Bild in "Meine Fotos" gelegt und gezeigt, optional
+     als Frame-Diashow (alle 3 Min. … täglich). FotoArchiv behält max. 60 eigene Bilder dort.
+  Im Betrachter: 📺-Knopf für das einzelne Foto oder Video.
+  Mit der Fernbedienung blättern: Bibliothek › Fernseher › "FotoArchiv im Heimnetz für den
+     Fernseher freigeben" einschalten. Am Fernseher dann Quelle › "FotoArchiv" (Samsung:
+     Verbundene Geräte). Ereignisse, Alben, Jahre/Monate, Personen, Favoriten; ← → blättert,
+     ▶ startet die Diashow des Fernsehers. Private und ausgeblendete Fotos erscheinen dort nie.
+     Geht nur, solange FotoArchiv am PC läuft.
+
+NEUE FOTOS HINZUFÜGEN (Menü "Import")
+  iCloud:  Konto hinzufügen (Name, Apple-ID, Passwort, dann Code vom iPhone). Danach reicht
+           "Neue holen" – auch Fotos aus einer geteilten Bibliothek. Was schon auf der Platte ist,
+           wird erkannt und nicht heruntergeladen. Die Anmeldung hält ca. 1–2 Monate.
+           Voraussetzung im iCloud-Konto: "Auf iCloud-Daten im Web zugreifen" an,
+           "Erweiterter Datenschutz" aus.
+  Google:  Google Takeout (nur Google Fotos, ZIP) herunterladen und den Ordner mit den ZIPs
+           importieren. Datum, Ort und Google-Alben werden übernommen.
+  Amazon / Handy / SD-Karte / WhatsApp: Ordner oder ZIP wählen und importieren.
+  Neue Dateien landen im Fotoordner unter Bilder\<Jahr>\ mit der Herkunft als Stichwort; Doppelte werden
+  übersprungen (gleicher Name+Größe, gleiche Aufnahmezeit+Maße, gleicher Bildinhalt).
+  Man kann auch einfach Dateien nach Bilder\<Jahr> kopieren und "Bibliothek aktualisieren".
+
+AN EINEM ANDEREN COMPUTER WEITERMACHEN
+  1. Am alten Computer: Bibliothek › "FotoArchiv beenden", dann die Platte sicher auswerfen
+     (Windows: "Hardware sicher entfernen", Mac: Auswerfen). Nicht einfach abziehen,
+     solange FotoArchiv läuft – sonst kann der Katalog beschädigt werden.
+  2. Am neuen Computer die Start-Datei doppelklicken. Ein unterbrochenes Einlesen läuft von
+     selbst an derselben Stelle weiter; bereits Verarbeitetes wird nicht wiederholt.
+
+WICHTIG
+  - FotoArchiv verändert deine Fotos nie. Verschoben werden sie nur, wenn du sie löschst (in den
+    Papierkorb), endgültig gelöscht nur mit "Papierkorb leeren" / "Endgültig löschen".
+    Alles Eigene (Personen, Favoriten) steht in FotoArchiv\data\catalog.db.
+  - Den Ordner "FotoArchiv" nach dem ersten Einlesen nicht mehr verschieben (Verknüpfungen
+    zeigen dorthin). Liegt er auf derselben Platte wie die Fotos, darf die Platte an jedem
+    Computer einen anderen Laufwerksbuchstaben haben.
+  - Datensicherung: Bitte die ganze Festplatte regelmäßig auf eine zweite Platte sichern.
+  - Videos im Format MTS (Camcorder), AVI, WMV, MPG, 3GP werden beim ersten Öffnen einmal für den
+    Browser umgewandelt (Fortschritt wird angezeigt; ca. 1/3 der Videolänge, alte MPG/AVI länger).
+    Zwischengespeichert auf der internen Platte des Computers (max. 8 GB), danach sofort abspielbar.
+
+TECHNIK (für später)
+  app\        Programm (Python), app\static\ Oberfläche
+  data\       catalog.db (Katalog), thumbs.db (Vorschaubilder, Gesichter), previews.db (HEIC/RAW-Ansichten)
+  runtime\    Python + Bibliotheken für Windows, Mac (Apple Silicon) und Mac (Intel)
+  models\     Gesichtserkennung (OpenCV YuNet + SFace), Ortsdatenbank (GeoNames)
+  tools\build_runtime.py  baut runtime\ und models\ neu (braucht Internet)
+  Ohne Oberfläche neu einlesen:  Start-Datei mit Parameter --index

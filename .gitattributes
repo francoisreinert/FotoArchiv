@@ -1,0 +1,6 @@
+*.cmd text eol=crlf
+LIESMICH.txt text eol=crlf
+*.command text eol=lf
+FotoArchiv.app/Contents/MacOS/* text eol=lf
+*.py text eol=lf
+*.js text eol=lf

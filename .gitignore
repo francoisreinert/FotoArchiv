@@ -1,0 +1,11 @@
+# Persönliches – gehört nie ins Repository
+data/
+Musik/*
+!Musik/.gitkeep
+# Laufzeit (zu groß für Git, liegt im Release-ZIP; neu bauen mit tools/build_runtime.py)
+runtime/*
+!runtime/VERSION
+__pycache__/
+*.pyc
+.DS_Store
+Thumbs.db

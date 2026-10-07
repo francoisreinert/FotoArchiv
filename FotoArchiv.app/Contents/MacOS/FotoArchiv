@@ -1,0 +1,4 @@
+#!/bin/bash
+# Startet FotoArchiv im Terminal (dort sieht man beim ersten Start die Einrichtung).
+HERE="$(cd "$(dirname "$0")/../../.." && pwd)"
+open -a Terminal "$HERE/FotoArchiv starten (Mac).command"
