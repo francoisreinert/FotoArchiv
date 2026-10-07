@@ -1,0 +1,16 @@
+FFmpeg (in PyAV und OpenCV enthalten)
+=====================================
+
+FotoArchiv liefert FFmpeg unverändert als Teil der Python-Pakete "av" (PyAV) und
+"opencv-python-headless" mit (Ordner runtime/ im Release-ZIP).
+
+- PyAV-Build: FFmpeg mit libx264, libx265 u. a. -> GNU General Public License Version 2 oder später
+  (Text: GPL-2.0.txt in diesem Ordner). Die genauen Quellen und Build-Skripte der mitgelieferten Fassung:
+  https://github.com/PyAV-Org/pyav-ffmpeg (Releases) und https://github.com/PyAV-Org/PyAV
+- OpenCV-Build: FFmpeg unter GNU Lesser General Public License 2.1 (LGPL-2.1.txt);
+  Quellen: https://github.com/opencv/opencv-python, https://ffmpeg.org/download.html
+- libheif/libde265 (in pillow_heif): LGPL-3.0 (LGPL-3.0.txt), https://github.com/strukturag/libheif
+- LibRaw (in rawpy): LGPL-2.1 oder CDDL-1.0, https://github.com/LibRaw/LibRaw
+
+Angebot: Wer den Quelltext genau dieser Fassungen nicht unter den Links findet, bekommt ihn auf
+Anfrage über die Issues des FotoArchiv-Projekts (mindestens drei Jahre ab Veröffentlichung).

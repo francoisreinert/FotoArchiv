@@ -1451,6 +1451,8 @@ async function showItem() {
   $(".v-title", viewer.el).textContent = `${fmtDate(it.taken)} · ${it.name}` + (viewer.ids.length > 1 ? ` · ${viewer.i + 1}/${viewer.ids.length}` : "");
   $(".v-fav", viewer.el).textContent = it.fav ? "★" : "☆";
   $(".v-fav", viewer.el).classList.toggle("on", !!it.fav);
+  $(".v-edit", viewer.el).hidden = it.kind === "video";
+  $(".v-edit", viewer.el).classList.toggle("on", !!it.edit);
   if (it.kind === "video") {
     // MP4/MOV spielt der Browser direkt; MTS, AVI, WMV … werden einmalig umgepackt (Fortschritt sichtbar)
     const direct = ["mp4", "m4v", "mov", "qt", "webm"].includes(it.ext);
@@ -1518,8 +1520,15 @@ function drawFaces() {
   const s = Math.min(r.width / img.naturalWidth, r.height / img.naturalHeight);
   const W = img.naturalWidth * s, H = img.naturalHeight * s;
   const L = r.left - wr.left + (r.width - W) / 2, T = r.top - wr.top + (r.height - H) / 2;
-  for (const f of viewer.item.faces) {
-    if (f.x == null) continue;
+  // Bearbeitetes Foto: Rahmen wie das Bild spiegeln, begradigen (Zoom) und zuschneiden
+  const ed_ = viewer.item.edit || {}, cr = ed_.crop || [0, 0, 1, 1];
+  const zz = ed_.angle && viewer.item.width ? zoomForAngle(viewer.item.width, viewer.item.height, ed_.angle) : 1;
+  const mapX = (x, w) => (0.5 + ((ed_.flip ? 1 - x - w : x) - 0.5) * zz - cr[0]) / cr[2];
+  const mapY = y => (0.5 + (y - 0.5) * zz - cr[1]) / cr[3];
+  for (const f0 of viewer.item.faces) {
+    if (f0.x == null) continue;
+    const f = Object.assign({}, f0, { x: mapX(f0.x, f0.w), y: mapY(f0.y), w: f0.w * zz / cr[2], h: f0.h * zz / cr[3] });
+    if (f.x + f.w < 0 || f.y + f.h < 0 || f.x > 1 || f.y > 1) continue;
     const b = document.createElement("div");
     const known = f.person != null;
     b.className = "fbox" + (known ? "" : " unk");
@@ -1584,6 +1593,7 @@ function renderPanel() {
       <button id="vp-date">Datum ändern</button><button id="vp-person">+ Person</button>
       <button id="vp-hide">${it.hidden ? "Wieder einblenden" : "Ausblenden"}</button>
       <button id="vp-priv">${it.private ? "Privat aufheben" : "🔒 Privat"}</button>
+      ${it.kind !== "video" ? `<button id="vp-edit">✎ ${it.edit ? "Bearbeitung ändern" : "Bearbeiten"}</button>` : ""}
       <button id="vp-del" class="danger">${it.hidden === 2 ? "Wiederherstellen" : "🗑 Löschen"}</button></div>
     ${it.hidden === 2 ? `<div class="muted" style="margin-top:6px">🗑 Im Papierkorb seit ${esc(fmtDate(it.trashed))}, vorher ${esc(it.trash_from)}</div>` : ""}
     ${it.priv_eff && !it.private ? `<div class="muted" style="margin-top:6px">🔒 Privat über Album oder Ereignis.</div>` : ""}
@@ -1605,6 +1615,8 @@ function bindPanel(panel, it) {
     after(it.hidden ? "Wieder eingeblendet" : "Ausgeblendet – zu finden unter Alben › Ausgeblendete Fotos");
   };
   $("#vp-del", panel).onclick = () => viewerDelete();
+  const vpe = $("#vp-edit", panel);
+  if (vpe) vpe.onclick = () => openEditor();
   $("#vp-priv", panel).onclick = async () => {
     if (!it.private && !await ensurePassword()) return;
     await api("/api/items/private", { ids, private: !it.private });
@@ -2385,6 +2397,7 @@ $(".v-prev").onclick = () => step(-1);
 $(".v-next").onclick = () => step(1);
 $(".v-close").onclick = closeViewer;
 $(".v-info").onclick = () => togglePanel();
+$(".v-edit").onclick = () => openEditor();
 $(".v-faces").onclick = () => toggleFaces();
 $(".v-fav").onclick = () => toggleFav();
 $(".v-del").onclick = () => viewerDelete();
@@ -2458,7 +2471,7 @@ async function toggleFav() {
   $(".v-fav").classList.toggle("on", !!it.fav);
 }
 document.addEventListener("keydown", e => {
-  if (viewer.el.hidden || e.target.matches("input, textarea")) return;
+  if (viewer.el.hidden || e.target.matches("input, textarea") || (typeof ed !== "undefined" && ed.open)) return;
   if (e.key === "ArrowRight") step(1);
   else if (e.key === "ArrowLeft") step(-1);
   else if (e.key === "Escape") { if ($(".popover")) closePopover(); else closeViewer(); }
@@ -2466,6 +2479,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "g" || e.key === "G") toggleFaces();
   else if (e.key === "f" || e.key === "F") toggleFav();
   else if (e.key === "r" || e.key === "R") rotate("cw");
+  else if (e.key === "e" || e.key === "E") openEditor();
   else if (e.key === "Delete") viewerDelete();
   else return;
   e.preventDefault();

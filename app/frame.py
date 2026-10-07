@@ -146,7 +146,10 @@ def frame_image(path, kind, userrot=0, size=(W, H)):
     if kind == "video":
         im = media.rotate_cw(media.video_frame(path)[0], userrot or 0)
     else:
-        im = media.open_image(path, kind, max_side=max(W, 1920), userrot=userrot or 0)[0]
+        import common
+
+        im = media.open_image(path, kind, max_side=max(W, 1920), userrot=userrot or 0,
+                              edit=common.edit_for(path))[0]
     ar = im.width / im.height
     if abs(ar - W / H) / (W / H) < 0.12:
         out = ImageOps.fit(im, (W, H), Image.LANCZOS)

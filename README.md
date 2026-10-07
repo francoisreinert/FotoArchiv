@@ -34,4 +34,27 @@ Alles Weitere steht in [LIESMICH.txt](LIESMICH.txt).
 | `tools/` | Laufzeit bauen, Icon erzeugen, Paket bauen, Mylio-Export |
 | `data/` | entsteht beim ersten Start: Katalog, Vorschaubilder, Einstellungen (gehört nie ins Repository) |
 
-Fremde Bestandteile und ihre Lizenzen: [DRITTANBIETER.md](DRITTANBIETER.md).
+## Mitmachen
+
+FotoArchiv ist ein privates Freizeitprojekt ohne kommerzielle Absichten – Mitarbeit ist willkommen:
+
+- **Fehler oder Idee?** Unter [Issues](../../issues) beschreiben (gern mit Bildschirmfoto, Windows/Mac-Version).
+- **Fragen, Erfahrungen, „ich würde gern mitmachen“:** [Discussions](../../discussions).
+- **Selbst etwas verbessert?** Gern als Pull Request. Oberfläche und Texte sind deutsch; der Code ist bewusst
+  ohne Frameworks gehalten (Python-Standardbibliothek + Bildverarbeitung, Vanilla JS).
+
+## Lizenz und Haftung
+
+FotoArchiv steht unter der **GNU General Public License v3.0** ([LICENSE](LICENSE)): Jeder darf es nutzen,
+verändern und weitergeben; wer eine veränderte Fassung weitergibt, muss deren Quelltext ebenfalls unter der
+GPL-3.0 offenlegen.
+
+Die Software wird unentgeltlich und **ohne jede Gewährleistung** bereitgestellt (siehe Abschnitte 15 und 16
+der Lizenz). Sie verändert Fotos nicht, kann sie aber auf Wunsch verschieben oder löschen (Papierkorb) –
+bitte wie bei jeder Software regelmäßig Sicherungen anlegen.
+
+Mitgelieferte fremde Bestandteile stehen unter ihren eigenen Lizenzen: Übersicht in
+[DRITTANBIETER.md](DRITTANBIETER.md), vollständige Texte im Ordner [Lizenzen](Lizenzen).
+Ortsdaten © [GeoNames](https://www.geonames.org) (CC BY 4.0), Kartenbilder © OpenStreetMap-Mitwirkende.
+Apple, iCloud, Google, Samsung, The Frame und Mylio sind Marken ihrer Inhaber; FotoArchiv ist mit keinem
+dieser Unternehmen verbunden.

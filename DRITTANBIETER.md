@@ -1,7 +1,9 @@
 # Verwendete fremde Software und Daten
 
-FotoArchiv bringt die folgenden Bestandteile anderer Projekte mit. Sie stehen unter ihren eigenen
-Lizenzen; die Rechte liegen bei den jeweiligen Autorinnen und Autoren.
+FotoArchiv selbst steht unter der GPL-3.0 (siehe `LICENSE`). Es bringt die folgenden Bestandteile anderer
+Projekte mit; sie stehen unter ihren eigenen Lizenzen, die Rechte liegen bei den jeweiligen Autorinnen und
+Autoren. **Die vollständigen Lizenztexte liegen im Ordner `Lizenzen/`** (Python-Pakete unter
+`Lizenzen/python-pakete/`, FFmpeg-Hinweis mit Quelltext-Angebot in `Lizenzen/FFmpeg_und_Codecs.txt`).
 
 ## Daten und Modelle (Ordner `models/`)
 

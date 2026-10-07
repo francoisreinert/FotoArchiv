@@ -70,6 +70,15 @@ FOTOS BEARBEITEN UND ORDNEN
   ausblenden. Ausgeblendete Fotos: Alben & Ereignisse › Ausgeblendete Fotos.
   Alle Änderungen stehen nur im Katalog – die Bilddateien selbst werden nie verändert.
 
+FOTOS BEARBEITEN (Zuschneiden, Licht, Farbe)
+  Im Betrachter "✎ Bearbeiten" (Taste E): Zuschneiden (frei oder 1:1, 4:3, 3:2, 16:9, Original; ⇄ = hoch/quer,
+  Ecken und Kanten ziehen, innen verschieben), Begradigen, 90° drehen, Spiegeln, Belichtung, Kontrast,
+  Lichter, Tiefen, Weiß, Schwarz, Sättigung, Dynamik, Wärme, Tönung, Schärfe, Vignette, "✨ Auto".
+  Taste V oder "Vorher" vergleicht mit dem Original, Doppelklick setzt einen Regler zurück, Enter = Fertig.
+  Die Originaldatei bleibt unverändert: die Bearbeitung steht im Katalog und gilt überall (Raster, Diashow,
+  Fernseher, Handy, Teilen/Export). "Original" im Editor macht alles rückgängig. Eine bearbeitete Datei
+  bekommt man über "Teilen …" (JPEG); "Originale" exportiert weiterhin die unveränderte Datei.
+
 LÖSCHEN
   - Fotos/Videos: markieren und Taste Entf (oder "Mehr …" › In den Papierkorb), im Betrachter
     Entf oder 🗑. Ausgeblendete Duplikate und RAW-Partner (IMG_1.CR2 zu IMG_1.JPG) kommen mit,

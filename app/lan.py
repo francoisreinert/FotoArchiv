@@ -155,7 +155,10 @@ def image_bytes(row, size):
         # 16:9 mit unscharfem Rand, Full HD: reicht für die Diashow und ist doppelt so schnell wie 4K
         data = frame.frame_image(to_abs(row[1]), row[2], row[5], size=(1920, 1080))
     else:
-        im = media.open_image(to_abs(row[1]), row[2], max_side=2560, userrot=row[5] or 0)[0]
+        import common
+
+        im = media.open_image(to_abs(row[1]), row[2], max_side=2560, userrot=row[5] or 0,
+                              edit=common.edit_for(to_abs(row[1])))[0]
         im.thumbnail((2560, 2560), Image.LANCZOS)
         buf = io.BytesIO()
         im.save(buf, "JPEG", quality=88)

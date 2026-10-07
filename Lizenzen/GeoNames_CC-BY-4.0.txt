@@ -1,0 +1,7 @@
+GeoNames (models/cities.txt, models/countries.txt)
+==================================================
+
+Orts- und Länderdaten von GeoNames (https://www.geonames.org), lizenziert unter
+Creative Commons Namensnennung 4.0 International (CC BY 4.0):
+https://creativecommons.org/licenses/by/4.0/deed.de
+Die Daten wurden für FotoArchiv auf Name, Land und Koordinaten gekürzt.

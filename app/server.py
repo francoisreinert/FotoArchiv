@@ -201,7 +201,7 @@ def thumb_bytes(iid):
     data = THUMBS.get(iid)
     if data:
         return data
-    row = db().execute("SELECT path, kind, userrot FROM items WHERE id=?", (iid,)).fetchone()
+    row = db().execute("SELECT path, kind, userrot, edit FROM items WHERE id=?", (iid,)).fetchone()
     if not row:
         return None
     import media
@@ -210,7 +210,7 @@ def thumb_bytes(iid):
         if row[1] == "video":
             im = media.rotate_cw(media.video_frame(to_abs(row[0]))[0], row[2] or 0)
         else:
-            im = media.open_image(to_abs(row[0]), row[1], max_side=800, userrot=row[2] or 0)[0]
+            im = media.open_image(to_abs(row[0]), row[1], max_side=800, userrot=row[2] or 0, edit=row[3])[0]
         data = media.make_thumb(im)
         THUMBS.put(iid, data)
         return data
@@ -222,13 +222,13 @@ def preview_bytes(iid):
     data = PREVIEWS.get(iid)
     if data:
         return data
-    row = db().execute("SELECT path, kind, userrot FROM items WHERE id=?", (iid,)).fetchone()
+    row = db().execute("SELECT path, kind, userrot, edit FROM items WHERE id=?", (iid,)).fetchone()
     if not row:
         return None
     import media
 
     try:
-        data = media.make_preview(to_abs(row[0]), row[1], userrot=row[2] or 0)
+        data = media.make_preview(to_abs(row[0]), row[1], userrot=row[2] or 0, edit=row[3])
     except Exception:
         return thumb_bytes(iid)
     PREVIEWS.put(iid, data)
@@ -518,7 +518,7 @@ def r_item(h, p, iid):
     c = db()
     cols = ["id", "path", "folder", "name", "ext", "kind", "size", "taken", "taken_src", "width", "height", "duration",
             "lat", "lon", "place", "camera", "rating", "fav", "keywords", "caption", "dup_of", "raw_of", "error",
-            "hidden", "usertags", "userrot", "trashed", "trash_from"]
+            "hidden", "usertags", "userrot", "trashed", "trash_from", "edit"]
     row = c.execute("SELECT %s FROM items WHERE id=?" % ",".join(cols), (int(iid),)).fetchone()
     if not row:
         return h.send_error(404)
@@ -535,7 +535,9 @@ def r_item(h, p, iid):
     d["copies"] = [r[0] for r in c.execute("SELECT path FROM items WHERE (dup_of=? OR raw_of=?) AND COALESCE(hidden,0) != 2",
                                            (int(iid), int(iid)))]
     rotfix = c.execute("SELECT rotfix FROM items WHERE id=?", (int(iid),)).fetchone()[0]
-    d["browser_ok"] = d["ext"] in common.BROWSER_IMAGE_EXT and (d["size"] or 0) < 40_000_000 and not rotfix
+    d["browser_ok"] = (d["ext"] in common.BROWSER_IMAGE_EXT and (d["size"] or 0) < 40_000_000 and not rotfix
+                       and not d["edit"])
+    d["edit"] = json.loads(d["edit"]) if d["edit"] else None
     d["albums"] = [{"id": r[0], "name": r[1]} for r in c.execute(
         "SELECT a.id, a.name FROM album_items ai JOIN albums a ON a.id=ai.album_id WHERE ai.item_id=?", (int(iid),))]
     d["events"] = [{"id": r[0], "name": r[1]} for r in c.execute(
@@ -560,9 +562,19 @@ def r_rotate(h, p, iid):
 
 def rotate_item(iid, cw):
     c = db()
-    row = c.execute("SELECT userrot, width, height FROM items WHERE id=?", (iid,)).fetchone()
+    row = c.execute("SELECT userrot, width, height, edit FROM items WHERE id=?", (iid,)).fetchone()
     if not row:
         return None
+    e = json.loads(row[3]) if row[3] else None
+    if e:
+        # Zuschnitt dreht sichtbar mit. Bei gespiegeltem Foto dreht die Grundlage andersherum
+        # (Spiegeln kehrt die Drehrichtung um), damit das Ergebnis wie erwartet aussieht.
+        if e.get("crop"):
+            x, y, w, h = e["crop"]
+            e["crop"] = [1 - y - h, x, h, w] if cw else [y, 1 - x - w, h, w]
+        if e.get("flip"):
+            cw = not cw
+        c.execute("UPDATE items SET edit=? WHERE id=?", (json.dumps(e), iid))
     rot = ((row[0] or 0) + (90 if cw else 270)) % 360
     c.execute("UPDATE items SET userrot=?, rotfix=?, width=?, height=? WHERE id=?",
               (rot, 1 if rot else 0, row[2], row[1], iid))
@@ -1863,6 +1875,47 @@ def _restart():
     os._exit(0)
 
 
+def r_edit_src(h, p, iid):
+    """Unbearbeitetes Foto (richtig gedreht, max. 1600 px) als Arbeitsbild für den Editor im Browser."""
+    import io
+
+    import media
+
+    if is_blocked(h, iid):
+        return h.send_error(403)
+    row = db().execute("SELECT path, kind, userrot FROM items WHERE id=?", (int(iid),)).fetchone()
+    if not row or row[1] == "video":
+        return h.send_error(404)
+    im = media.open_image(to_abs(row[0]), row[1], max_side=1600, userrot=row[2] or 0)[0].convert("RGB")
+    im.thumbnail((1600, 1600))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=92)
+    h.send_bytes(buf.getvalue(), "image/jpeg", cache=0)
+
+
+def r_edit_save(h, p, iid):
+    """Bearbeitung speichern (edit = null setzt aufs Original zurück)."""
+    import edit as editmod
+
+    iid = int(iid)
+    if is_blocked(h, iid):
+        return h.send_json({"error": "Privat – bitte entsperren"}, 403)
+    e = editmod.clean(h.body().get("edit"))
+    c = db()
+    c.execute("UPDATE items SET edit=? WHERE id=?", (json.dumps(e) if e else None, iid))
+    c.commit()
+    THUMBS.delete([iid])
+    PREVIEWS.delete([iid])
+    try:
+        import lan
+
+        lan._jpeg_cache.clear()
+    except Exception:
+        pass
+    thumb_bytes(iid)
+    h.send_json({"ok": True, "edit": e})
+
+
 def r_quit(h, p):
     h.send_json({"ok": True})
     threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0)), daemon=True).start()
@@ -1967,6 +2020,8 @@ ROUTES = [
     ("GET", r"/api/clusters/(\d+)", r_cluster),
     ("POST", r"/api/faces/recompute", r_recompute),
     ("POST", r"/api/quit", r_quit),
+    ("GET", r"/edit-src/(\d+)", r_edit_src),
+    ("POST", r"/api/item/(\d+)/edit", r_edit_save),
     ("POST", r"/api/library", r_library),
 ]
 

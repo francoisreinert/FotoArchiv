@@ -359,3 +359,22 @@ a.stat:hover { border-color: #4a525b; }
 /* Erster Start: Fotoordner wählen */
 .card.setup { border-color: var(--accent2); box-shadow: 0 0 0 1px var(--accent2) inset; }
 .card code { background: var(--panel2); padding: 2px 6px; border-radius: 6px; overflow-wrap: anywhere; }
+
+/* Fotobearbeitung */
+#editor { position: fixed; inset: 0; z-index: 60; background: #0b0c0d; display: grid; grid-template-columns: 1fr 320px;
+  grid-template-rows: 52px 1fr; }
+.ed-bar { grid-column: 1 / 3; display: flex; align-items: center; gap: 10px; padding: 0 14px; background: var(--panel);
+  border-bottom: 1px solid var(--line); }
+.ed-bar button.on, .ed-panel button.on { background: #22344a; color: #cfe5ff; border-color: #22344a; }
+.ed-stage { position: relative; display: flex; align-items: center; justify-content: center; padding: 18px; min-width: 0; min-height: 0; }
+.ed-canvas { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; touch-action: none; }
+.ed-load { position: absolute; }
+.ed-panel { background: var(--panel); border-left: 1px solid var(--line); padding: 6px 16px 20px; overflow-y: auto; }
+.ed-panel h3 { font-size: 13px; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin: 18px 0 8px; }
+.ed-panel .row { margin-bottom: 8px; }
+.ed-panel .row button { padding: 4px 9px; }
+.ed-sl { display: block; margin: 6px 0 10px; }
+.ed-sl span { display: flex; justify-content: space-between; font-size: 13px; }
+.ed-sl small { color: var(--accent); font-variant-numeric: tabular-nums; }
+.ed-sl input { width: 100%; accent-color: var(--accent); }
+@media (max-width: 760px) { #editor { grid-template-columns: 1fr; grid-template-rows: 52px 55vh 1fr; } .ed-panel { border-left: 0; } }

@@ -155,8 +155,9 @@ def build(target, zip_it=True):
     shutil.copy2(os.path.join(PAKET, "FotoArchiv.icns"), os.path.join(app, "Resources", "FotoArchiv.icns"))
     with open(os.path.join(out, "LIESMICH.txt"), "w", encoding="utf-8", newline="") as f:
         f.write(liesmich())
-    for f in ("README.md", "DRITTANBIETER.md"):
+    for f in ("README.md", "DRITTANBIETER.md", "LICENSE"):
         shutil.copy2(os.path.join(PAKET, f), os.path.join(out, f))
+    shutil.copytree(os.path.join(PAKET, "Lizenzen"), os.path.join(out, "Lizenzen"))
     for p in EXEC:
         full = os.path.join(out, *p.split("/"))
         os.chmod(full, os.stat(full).st_mode | stat.S_IXUSR | stat.S_IXGRP | stat.S_IXOTH)

@@ -284,7 +284,10 @@ def _store(con, res, persons, pending_thumbs):
          m.get("caption"), PROC_VERSION, 1 if res.get("thumb") else 0, m.get("phash"), m.get("orient"),
          m.get("rotfix", 0), iid))
     if res.get("thumb"):
-        pending_thumbs.append((iid, res["thumb"]))
+        if con.execute("SELECT edit FROM items WHERE id=?", (iid,)).fetchone()[0]:
+            THUMBS.delete([iid])  # bearbeitet: Vorschau wird beim nächsten Anzeigen mit Bearbeitung erzeugt
+        else:
+            pending_thumbs.append((iid, res["thumb"]))
     if res.get("faces") is not None:
         # Manuelle Zuordnungen bleiben bei erneuter Verarbeitung erhalten
         manual = con.execute("SELECT x, y, w, h, person_id FROM faces WHERE item_id=? AND source='manual'",

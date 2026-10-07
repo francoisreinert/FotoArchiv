@@ -90,7 +90,8 @@ def _as_jpeg(path, kind, max_side, userrot):
     """Foto als JPEG (richtig gedreht, Datum/GPS bleiben in den EXIF-Daten)."""
     import media
 
-    im, exif, _x, _s, _o = media.open_image(path, kind, max_side=max_side, userrot=userrot or 0)
+    im, exif, _x, _s, _o = media.open_image(path, kind, max_side=max_side, userrot=userrot or 0,
+                                            edit=common.edit_for(path))
     if max_side:
         im.thumbnail((max_side, max_side), Image.LANCZOS)
     buf = io.BytesIO()
@@ -488,7 +489,8 @@ def render_show(items, out_path, seconds, kenburns, music, clips, job, max_clip_
     def load(row):
         iid, rel, kind, fname, taken, userrot = row
         try:
-            im = media.open_image(to_abs(rel), kind, max_side=2600, userrot=userrot or 0)[0]
+            im = media.open_image(to_abs(rel), kind, max_side=2600, userrot=userrot or 0,
+                                  edit=common.edit_for(to_abs(rel)))[0]
         except Exception as ex:
             job.note("Übersprungen %s: %s" % (fname, ex))
             job.errors += 1

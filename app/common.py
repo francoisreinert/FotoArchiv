@@ -245,7 +245,8 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
         for col, typ in (("phash", "INTEGER"), ("orient", "INTEGER"), ("rotfix", "INTEGER"), ("userrot", "INTEGER"),
                          ("hidden", "INTEGER DEFAULT 0"), ("usertaken", "TEXT"), ("usertags", "TEXT"),
                          ("private", "INTEGER DEFAULT 0"), ("priv_eff", "INTEGER DEFAULT 0"),
-                         ("trashed", "TEXT"), ("trash_from", "TEXT"), ("trash_side", "TEXT")):
+                         ("trashed", "TEXT"), ("trash_from", "TEXT"), ("trash_side", "TEXT"),
+                         ("edit", "TEXT")):
             if col not in cols:
                 con.execute("ALTER TABLE items ADD COLUMN %s %s" % (col, typ))
         # Abdeckende Indizes: Übersicht, Kalender und Ordner lesen nur den Index statt jede Zeile
@@ -300,6 +301,21 @@ class BlobStore:
         c = self.con()
         c.executemany("DELETE FROM blobs WHERE id=?", [(k,) for k in keys])
         c.commit()
+
+
+_edit_local = threading.local()
+
+
+def edit_for(path):
+    """Bearbeitung (items.edit) zu einer Datei – für alle Stellen, die Fotos zum Anzeigen/Exportieren öffnen."""
+    c = getattr(_edit_local, "con", None)
+    if c is None:
+        c = _edit_local.con = connect()
+    try:
+        row = c.execute("SELECT edit FROM items WHERE path=?", (to_rel(path),)).fetchone()
+    except sqlite3.Error:
+        return None
+    return row[0] if row else None
 
 
 # Gesichts-Ausschnitte bekommen eigene Schlüssel im Thumbnail-Speicher.

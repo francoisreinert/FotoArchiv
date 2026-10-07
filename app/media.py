@@ -296,14 +296,21 @@ def exif_info(exif):
 
 # ---------------------------------------------------------------- Laden ----
 
-def open_image(path, kind, max_side=None, orient_override=None, userrot=0):
+def open_image(path, kind, max_side=None, orient_override=None, userrot=0, edit=None):
     """Öffnet ein Foto oder RAW. Gibt (Bild, exif, xmp-bytes, Originalgröße, Ausrichtung) zurück.
 
     Das Bild ist nach der EXIF-Ausrichtung der Datei gedreht (wie in Mylio und im Browser).
     Die in Mylio/XMP gespeicherte Ausrichtung ist oft veraltet und wird daher nicht benutzt.
     userrot: zusätzliche Drehung in Grad im Uhrzeigersinn (in FotoArchiv vom Benutzer gedreht).
     max_side erlaubt schnelles, verkleinertes Dekodieren von JPEGs.
+    edit: Bearbeitung aus items.edit (nur für Anzeige/Export – Erkennung arbeitet mit dem Original).
     """
+    if edit:
+        import edit as editmod
+
+        edit = editmod.parse(edit)
+        if edit and max_side:
+            max_side = int(max_side * editmod.crop_scale(edit))  # Ausschnitt soll scharf bleiben
     im, exif, xmp, size, applied = _open_image(path, kind, max_side)
     if orient_override and orient_override in range(1, 9) and orient_override != applied:
         im = reorient(im, applied, orient_override)
@@ -314,6 +321,8 @@ def open_image(path, kind, max_side=None, orient_override=None, userrot=0):
         im = rotate_cw(im, userrot)
         if userrot % 180:
             size = (size[1], size[0])
+    if edit:
+        im = editmod.apply(im, edit)
     return im, exif, xmp, size, applied
 
 
@@ -457,11 +466,11 @@ def dhash(im):
     return v - (1 << 64) if v >= (1 << 63) else v
 
 
-def make_preview(path, kind, max_side=2560, userrot=0):
+def make_preview(path, kind, max_side=2560, userrot=0, edit=None):
     if kind == "video":
         im = rotate_cw(video_frame(path)[0], userrot or 0)
     else:
-        im = open_image(path, kind, max_side=max_side, userrot=userrot or 0)[0]
+        im = open_image(path, kind, max_side=max_side, userrot=userrot or 0, edit=edit)[0]
     im.thumbnail((max_side, max_side), Image.LANCZOS)
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=88)
