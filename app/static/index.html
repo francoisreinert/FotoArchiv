@@ -16,6 +16,7 @@
     <input id="search" type="search" placeholder="Suchen: Ort, Ordner, Jahr, Monat, Kamera, Stichwort …" autocomplete="off">
     <div id="suggest" hidden></div>
   </div>
+  <div id="kindsw" class="kindsw" title="Nur Fotos oder nur Videos zeigen (gilt für alle Ansichten)"><button data-kind="" class="on">Alle</button><button data-kind="photo">📷 Fotos</button><button data-kind="video">🎬 Videos</button></div>
   <button id="filterbtn" class="ghost" title="Filter">Filter</button>
   <button id="lockbtn" class="ghost" hidden></button>
   <div id="indexstatus" hidden></div>
@@ -44,6 +45,7 @@
     <a href="#/personen" data-nav="personen">Personen</a>
     <a href="#/karte" data-nav="karte">Karte</a>
     <a href="#/favoriten" data-nav="favoriten">Favoriten</a>
+    <a href="#/video" data-nav="video">Videoschnitt</a>
     <a href="#/import" data-nav="import">Import</a>
     <a href="#/einstellungen" data-nav="einstellungen">Bibliothek</a>
     <a href="#/duplikate" data-nav="duplikate">Duplikate</a>
@@ -65,6 +67,7 @@
     <button class="v-rotl" title="Nach links drehen">⟲</button>
     <button class="v-rotr" title="Nach rechts drehen (R)">⟳</button>
     <button class="v-edit" title="Bearbeiten (E)">✎ Bearbeiten</button>
+    <button class="v-vadd" title="Zum Videoprojekt hinzufügen (Shift+Klick: anderes Projekt)">🎬 + Video</button>
     <button class="v-tv" title="Auf dem Fernseher / Frame zeigen">📺</button>
     <button class="v-faces" title="Gesichter zeigen (G)">Gesichter</button>
     <button class="v-fav" title="Favorit (F)">☆</button>
@@ -85,11 +88,13 @@
   <button data-act="event" title="Ereignis aus diesen Fotos erstellen">+ Ereignis</button>
   <button data-act="person" title="Person zuordnen">+ Person</button>
   <button data-act="tag" title="Stichwort hinzufügen">+ Stichwort</button>
+  <button data-act="video" title="In ein Videoprojekt übernehmen">🎬 Video</button>
   <button data-act="more" title="Weitere Aktionen">Mehr …</button>
 </div>
 <div id="tvbar" hidden></div>
 <div id="toast" hidden></div>
 <script src="/app.js"></script>
 <script src="/editor.js"></script>
+<script src="/video.js"></script>
 </body>
 </html>

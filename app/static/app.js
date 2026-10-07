@@ -111,6 +111,8 @@ class VGrid {
       if (e.target.closest("a")) return;
       const hchk = e.target.closest(".hchk");
       if (hchk) { this.toggleRange(+hchk.dataset.s, +hchk.dataset.e); return; }
+      const vadd = e.target.closest(".vadd");
+      if (vadd) { quickAddVideo([this.ids[+vadd.closest(".cell").dataset.i]], e.shiftKey); return; }
       const cell = e.target.closest(".cell");
       if (!cell) return;
       const i = +cell.dataset.i;
@@ -220,7 +222,8 @@ class VGrid {
           d.dataset.i = i;
           d.style.cssText = `top:${row.y}px;left:${(i - row.start) * this.size}px;width:${this.size}px;height:${this.size}px`;
           d.innerHTML = this.lockedSet.has(i) ? `<div class="lockcell" title="Privat – zum Entsperren klicken">🔒</div><span class="chk"></span>`
-            : `<img decoding="async" src="${thumbUrl(this.ids[i])}" alt=""><span class="chk"></span>` + (this.videos.has(i) ? '<span class="vid">▶</span>' : "");
+            : `<img decoding="async" src="${thumbUrl(this.ids[i])}" alt=""><span class="chk"></span>` + (this.videos.has(i) ? '<span class="vid">▶</span>' : "")
+              + `<span class="vadd" title="Zum Videoprojekt hinzufügen (Shift+Klick: anderes Projekt)">🎬+</span>`;
           els.push(d);
         }
       }
@@ -1452,6 +1455,7 @@ async function showItem() {
   $(".v-fav", viewer.el).textContent = it.fav ? "★" : "☆";
   $(".v-fav", viewer.el).classList.toggle("on", !!it.fav);
   $(".v-edit", viewer.el).hidden = it.kind === "video";
+  $(".v-vadd", viewer.el).hidden = false;
   $(".v-edit", viewer.el).classList.toggle("on", !!it.edit);
   if (it.kind === "video") {
     // MP4/MOV spielt der Browser direkt; MTS, AVI, WMV … werden einmalig umgepackt (Fortschritt sichtbar)
@@ -1668,6 +1672,13 @@ async function runAction(act, ev) {
     const r = await api("/api/trash/purge", { ids });
     done(`${r.count.toLocaleString("de-DE")} endgültig gelöscht`, true);
     return reportErrors(r);
+  }
+  if (act === "video") {
+    const r = await addToVideo(ids);
+    if (!r) return;
+    done("", false);
+    toastAction(`${n} in „${r.name}“ übernommen`, "Öffnen", () => { location.hash = "#/video/" + r.id; });
+    return;
   }
   if (act === "show") return slideshowDialog(ids, `${n} Fotos`);
   if (act === "share") return shareDialog(ids, g.context.albumName || "");
@@ -2398,6 +2409,7 @@ $(".v-next").onclick = () => step(1);
 $(".v-close").onclick = closeViewer;
 $(".v-info").onclick = () => togglePanel();
 $(".v-edit").onclick = () => openEditor();
+$(".v-vadd").onclick = e => { if (viewer.item && !viewer.item.locked) quickAddVideo([viewer.item.id], e.shiftKey); };
 $(".v-faces").onclick = () => toggleFaces();
 $(".v-fav").onclick = () => toggleFav();
 $(".v-del").onclick = () => viewerDelete();
@@ -2579,8 +2591,16 @@ $("#f-reset").onclick = () => {
   markFilterBtn();
   runSearch();
 };
+// Umschalter Alle | Fotos | Videos: lädt die aktuelle Ansicht (Album, Ordner …) neu, statt zur Zeitleiste zu springen
+$$("#kindsw [data-kind]").forEach(b => b.onclick = () => {
+  state.filters.kind = b.dataset.kind;
+  $("#f-kind").value = b.dataset.kind;
+  markFilterBtn();
+  route();
+});
 function markFilterBtn() {
   const f = state.filters;
+  $$("#kindsw [data-kind]").forEach(b => b.classList.toggle("on", b.dataset.kind === (f.kind === "raw" ? "photo" : f.kind || "")));
   const n = [f.from, f.to, f.kind, f.fav, f.nodate, f.dups, f.sort !== "desc"].filter(Boolean).length;
   $("#filterbtn").textContent = n ? `Filter (${n})` : "Filter";
   $("#filterbtn").classList.toggle("primary", !!n);

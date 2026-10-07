@@ -1428,6 +1428,9 @@ def r_import_stop(h, p):
     h.send_json({"ok": True})
 
 
+AUDIO_EXTS = {".mp3", ".m4a", ".aac", ".wav", ".flac", ".ogg", ".aif", ".aiff"}
+
+
 def r_fs(h, p):
     """Ordner-Auswahl für den Import: Laufwerke/Ordner/ZIP-Dateien auflisten."""
     path = p.get("path") or ""
@@ -1456,8 +1459,10 @@ def r_fs(h, p):
             try:
                 if e.is_dir():
                     entries.append({"name": e.name, "path": e.path, "type": "dir"})
-                elif e.name.lower().endswith(".zip"):
+                elif e.name.lower().endswith(".zip") and not p.get("audio"):
                     entries.append({"name": e.name, "path": e.path, "type": "zip", "size": e.stat().st_size})
+                elif p.get("audio") and os.path.splitext(e.name)[1].lower() in AUDIO_EXTS:
+                    entries.append({"name": e.name, "path": e.path, "type": "audio", "size": e.stat().st_size})
             except OSError:
                 pass
     except OSError as ex:
@@ -1530,8 +1535,25 @@ def r_screen(h, p, iid):
 
 def r_music(h, p):
     import share
+    import video
 
-    h.send_json({"music": share.music_list(), "dirs": share.music_dirs()})
+    music = share.music_list()
+    if p.get("dur"):
+        for m in music:
+            m["duration"] = video.audio_duration(m["path"])
+    h.send_json({"music": music, "dirs": share.music_dirs()})
+
+
+def r_music_import(h, p):
+    """Audiodatei vom Rechner in den Musik-Ordner übernehmen (Videoschnitt)."""
+    import video
+
+    try:
+        dest = video.import_music(h.body().get("path") or "")
+    except (RuntimeError, OSError) as ex:
+        return h.send_json({"error": str(ex)}, 400)
+    h.send_json({"ok": True, "path": dest, "name": os.path.splitext(os.path.basename(dest))[0],
+                 "duration": video.audio_duration(dest)})
 
 
 def r_music_file(h, p):
@@ -1916,6 +1938,170 @@ def r_edit_save(h, p, iid):
     h.send_json({"ok": True, "edit": e})
 
 
+# ---------------------------------------------------------- Videoschnitt ----
+
+def _vproject(pid):
+    row = db().execute("SELECT id, name, data, created, updated FROM vprojects WHERE id=?", (int(pid),)).fetchone()
+    if not row:
+        return None
+    return {"id": row[0], "name": row[1], "data": json.loads(row[2] or "{}"), "created": row[3], "updated": row[4]}
+
+
+def r_vprojects(h, p):
+    import video
+
+    out = []
+    for pid, name, data, upd in db().execute("SELECT id, name, data, updated FROM vprojects ORDER BY updated DESC"):
+        d = json.loads(data or "{}")
+        d.setdefault("clips", [])
+        d.setdefault("music", [])
+        try:
+            total = video.timeline(video.clean(d, db()))[1]
+        except Exception:
+            total = 0
+        out.append({"id": pid, "name": name, "updated": upd, "clips": len(d["clips"]), "seconds": total,
+                    "cover": next((c["item"] for c in d["clips"]), None)})
+    h.send_json({"projects": out, "jobs": video.jobs()})
+
+
+def r_vproject(h, p, pid):
+    pr = _vproject(pid)
+    if not pr:
+        return h.send_error(404)
+    import video
+
+    pr["data"] = video.clean(pr["data"], db())
+    pr["items"] = {}
+    for c in pr["data"]["clips"]:
+        if c["item"] not in pr["items"]:
+            r = db().execute("SELECT id, name, ext, kind, duration, width, height, userrot, COALESCE(priv_eff,0) "
+                             "FROM items WHERE id=?", (c["item"],)).fetchone()
+            if r:
+                pr["items"][r[0]] = dict(zip(("id", "name", "ext", "kind", "duration", "width", "height", "userrot",
+                                              "private"), r))
+    pr["jobs"] = video.jobs(int(pid), 20)
+    h.send_json(pr)
+
+
+def r_vproject_create(h, p):
+    import video
+
+    b = h.body()
+    c = db()
+    now = video._now()
+    clips = [x for x in (video.new_clip(c, i) for i in _visible_ids(h, _ids(b))) if x]
+    pid = c.execute("INSERT INTO vprojects(name, data, created, updated) VALUES(?,?,?,?)",
+                    ((b.get("name") or "Neues Video").strip()[:120], json.dumps({"clips": clips, "music": []}), now,
+                     now)).lastrowid
+    c.commit()
+    h.send_json({"ok": True, "id": pid})
+
+
+def r_vproject_save(h, p, pid):
+    import video
+
+    b = h.body()
+    c = db()
+    if not _vproject(pid):
+        return h.send_error(404)
+    if "data" in b:
+        c.execute("UPDATE vprojects SET data=?, updated=? WHERE id=?",
+                  (json.dumps(video.clean(b["data"], c)), video._now(), int(pid)))
+    if (b.get("name") or "").strip():
+        c.execute("UPDATE vprojects SET name=?, updated=? WHERE id=?", (b["name"].strip()[:120], video._now(), int(pid)))
+    c.commit()
+    h.send_json({"ok": True})
+
+
+def r_vproject_add(h, p, pid):
+    import video
+
+    pr = _vproject(pid)
+    if not pr:
+        return h.send_error(404)
+    c = db()
+    d = pr["data"]
+    d.setdefault("clips", [])
+    added = [x for x in (video.new_clip(c, i) for i in _visible_ids(h, _ids(h.body()))) if x]
+    d["clips"] += added
+    c.execute("UPDATE vprojects SET data=?, updated=? WHERE id=?", (json.dumps(video.clean(d, c)), video._now(), int(pid)))
+    c.commit()
+    h.send_json({"ok": True, "added": len(added)})
+
+
+def r_vproject_delete(h, p, pid):
+    db().execute("DELETE FROM vprojects WHERE id=?", (int(pid),))
+    db().commit()
+    h.send_json({"ok": True})
+
+
+def r_vproject_render(h, p, pid):
+    import video
+
+    try:
+        jid = video.enqueue(int(pid))
+    except RuntimeError as ex:
+        return h.send_json({"error": str(ex)}, 400)
+    h.send_json({"ok": True, "job": jid})
+
+
+def r_vproject_preview(h, p, pid):
+    """Kurzen Ausschnitt ab t (Sequenzzeit) klein rendern – mit Übergängen und Ton."""
+    import video
+
+    b = h.body()
+    d = video.clean(b.get("data") if b.get("data") else (_vproject(pid) or {}).get("data"), db())
+    try:
+        name, t0 = video.preview(d, float(b.get("t") or 0), float(b.get("seconds") or 8))
+    except RuntimeError as ex:
+        return h.send_json({"error": str(ex)}, 400)
+    h.send_json({"ok": True, "url": "/vpreview/" + name, "t0": t0})
+
+
+def r_vpreview(h, p, name):
+    import video
+
+    path = video.preview_path(name)
+    if not path:
+        return h.send_error(404)
+    h.send_file(path, "video/mp4")
+
+
+def r_vjobs(h, p):
+    import video
+
+    h.send_json(video.jobs(int(p["project"]) if p.get("project") else None))
+
+
+def r_vjob_cancel(h, p, jid):
+    import video
+
+    video.cancel(int(jid))
+    h.send_json({"ok": True})
+
+
+def _vjob_out(jid):
+    row = db().execute("SELECT out, status FROM vrenders WHERE id=?", (int(jid),)).fetchone()
+    return row[0] if row and row[1] == "fertig" and row[0] and os.path.exists(row[0]) else None
+
+
+def r_vjob_file(h, p, jid):
+    out = _vjob_out(jid)
+    if not out:
+        return h.send_error(404)
+    h.send_file(out, "video/mp4")
+
+
+def r_vjob_reveal(h, p, jid):
+    import share
+
+    out = _vjob_out(jid)
+    if not out:
+        return h.send_json({"error": "Datei nicht mehr da"}, 404)
+    share.reveal(os.path.dirname(out))
+    h.send_json({"ok": True})
+
+
 def r_quit(h, p):
     h.send_json({"ok": True})
     threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0)), daemon=True).start()
@@ -2023,6 +2209,20 @@ ROUTES = [
     ("GET", r"/edit-src/(\d+)", r_edit_src),
     ("POST", r"/api/item/(\d+)/edit", r_edit_save),
     ("POST", r"/api/library", r_library),
+    ("GET", r"/api/vprojects", r_vprojects),
+    ("POST", r"/api/vprojects", r_vproject_create),
+    ("GET", r"/api/vprojects/(\d+)", r_vproject),
+    ("POST", r"/api/vprojects/(\d+)", r_vproject_save),
+    ("POST", r"/api/vprojects/(\d+)/add", r_vproject_add),
+    ("POST", r"/api/vprojects/(\d+)/delete", r_vproject_delete),
+    ("POST", r"/api/vprojects/(\d+)/render", r_vproject_render),
+    ("GET", r"/api/vjobs", r_vjobs),
+    ("POST", r"/api/vprojects/(\d+)/preview", r_vproject_preview),
+    ("GET", r"/vpreview/(v[0-9a-f]+\.mp4)", r_vpreview),
+    ("POST", r"/api/music/import", r_music_import),
+    ("POST", r"/api/vjobs/(\d+)/cancel", r_vjob_cancel),
+    ("POST", r"/api/vjobs/(\d+)/reveal", r_vjob_reveal),
+    ("GET", r"/vjob/(\d+)\.mp4", r_vjob_file),
 ]
 
 
@@ -2109,6 +2309,12 @@ def main():
             import videoconv
 
             videoconv.remove_partial()
+        except Exception:
+            pass
+        try:
+            import video
+
+            video.recover()
         except Exception:
             pass
         try:

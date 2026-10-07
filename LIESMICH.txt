@@ -37,6 +37,7 @@ FUNKTIONEN
                Ort ("Paris", "Italien"), Kamera ("iPhone"), Stichwörter, Beschreibungen.
                Personen: Namen tippen und aus der Liste wählen (mehrere = Fotos mit allen zusammen).
                "Filter": Zeitraum, nur Videos/Fotos, Favoriten, Fotos ohne sicheres Datum.
+               Oben "Alle | 📷 Fotos | 🎬 Videos" trennt direkt – gilt für jede Ansicht (Alben, Ordner …).
   Ordner       Die Ordnerstruktur des Fotoordners
   Personen     Gesichter werden beim Einlesen in allen Fotos gefunden. So geht's los:
                - "Unbekannte Gesichter benennen": ähnliche Gesichter sind schon gruppiert –
@@ -78,6 +79,26 @@ FOTOS BEARBEITEN (Zuschneiden, Licht, Farbe)
   Die Originaldatei bleibt unverändert: die Bearbeitung steht im Katalog und gilt überall (Raster, Diashow,
   Fernseher, Handy, Teilen/Export). "Original" im Editor macht alles rückgängig. Eine bearbeitete Datei
   bekommt man über "Teilen …" (JPEG); "Originale" exportiert weiterhin die unveränderte Datei.
+
+VIDEOSCHNITT
+  Clips sammeln: 🎬+ oben rechts auf jedem Foto/Video (bzw. "🎬 + Video" im Betrachter) legt es ins zuletzt
+  benutzte Projekt, Shift+Klick wählt ein anderes; oder markieren und "🎬 Video" in der Leiste oben.
+  Menü "Videoschnitt" › Projekt. Die Zeitleiste hat Spuren:
+    🎞 Bild        Clips mit Nummer, Name, Dauer. Klick springt an die Stelle und wählt den Clip.
+                   Gelbe Marken = Übergänge an jeder Schnittstelle (| Schnitt, ◐ Überblenden, ■ über Schwarz):
+                   anklicken zum Ändern, seitlich ziehen = Dauer. Graue Marken am Anfang/Ende = Film ein-/ausblenden.
+    🔊 Originalton Ton der Videoclips; Balken hoch/runter ziehen = lauter/leiser (0–150 %).
+    ♪ Musik        "♪ + Musik" (links): Lied aus FotoArchiv\Musik oder "Audiodatei vom Computer" (wird dorthin
+                   kopiert); legt es an den Abspielkopf. Block ziehen = verschieben, anklicken = Lautstärke/Blenden.
+  Tasten: J/K/L rückwärts/stopp/vorwärts (mehrmals = schneller), Leertaste Start/Stop, ←/→ ein Bild,
+  Shift+←/→ eine Sekunde, I/O Ein-/Ausstieg des Clips an den Abspielkopf, B schneiden, Entf entfernen,
+  +/−/0 oder Strg+Mausrad zoomen. Rechts stehen die Einstellungen des Gewählten (Zeiten auch zum Tippen).
+  Die Live-Ansicht zeigt Übergänge als harten Schnitt. "✨ Effekt-Vorschau (8 s ab hier)" rechnet 8 Sekunden klein
+  mit Übergängen, Blenden und Ton (ca. 1–3 s) – nur zum Ansehen, der Film entsteht mit "Rendern ▶". Der gerechnete
+  Bereich ist in der Zeitleiste blau markiert: dort klicken spielt die Vorschau ab dieser Stelle, Leertaste
+  startet/stoppt, "↻ Nochmal" von vorn, "✕ Vorschau schließen" zurück zur Live-Ansicht.
+  "Rendern ▶" rechnet im Hintergrund (Renderliste mit Fortschritt, Abbrechen, Historie); das MP4 liegt in
+  "FotoArchiv Export" auf dem Schreibtisch. Format 16:9, 9:16 (Handy), 1:1, 4:3, wahlweise 4K; bis 3 Stunden.
 
 LÖSCHEN
   - Fotos/Videos: markieren und Taste Entf (oder "Mehr …" › In den Papierkorb), im Betrachter

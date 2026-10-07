@@ -378,3 +378,127 @@ a.stat:hover { border-color: #4a525b; }
 .ed-sl small { color: var(--accent); font-variant-numeric: tabular-nums; }
 .ed-sl input { width: 100%; accent-color: var(--accent); }
 @media (max-width: 760px) { #editor { grid-template-columns: 1fr; grid-template-rows: 52px 55vh 1fr; } .ed-panel { border-left: 0; } }
+
+/* Videoschnitt */
+.vempty { aspect-ratio: 4/3; display: grid; place-items: center; font-size: 40px; background: #1d2023; }
+.vjobs { width: 100%; max-width: 1000px; border-collapse: collapse; }
+.vjobs td { padding: 8px 6px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+.vjobs .ok { color: var(--ok); }
+.vjobs .bad { color: #ff8a84; }
+.vpage h2 { font-size: 16px; margin: 22px 0 10px; }
+.vtop { display: grid; grid-template-columns: minmax(0, 1fr) 330px; gap: 16px; align-items: start; }
+.vplayer { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 10px; }
+.vscreen { position: relative; background: #000; border-radius: 8px; overflow: hidden; max-height: 58vh; margin: 0 auto; aspect-ratio: 16/9; }
+.vscreen video, .vscreen img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: contain; }
+.vscreen .vblack { display: none; }
+.vscreen .vwait { position: absolute; left: 0; right: 0; bottom: 10px; text-align: center; text-shadow: 0 1px 4px #000; }
+.vctrl { display: flex; align-items: center; gap: 10px; margin: 8px 0; font-variant-numeric: tabular-nums; }
+.vseq { position: relative; height: 34px; background: var(--panel2); border-radius: 6px; cursor: pointer; overflow: hidden; }
+.vseg { position: absolute; top: 4px; bottom: 4px; border-radius: 4px; opacity: .75; border-right: 2px solid var(--panel2); }
+.vseg.sel { opacity: 1; outline: 2px solid #fff; outline-offset: -2px; }
+.vcursor { position: absolute; top: 0; bottom: 0; width: 2px; background: #fff; z-index: 2; pointer-events: none; }
+.vinspect { background: var(--panel); border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; }
+.vinspect h3 { margin: 0 0 10px; font-size: 15px; }
+.vrow { display: flex; align-items: center; gap: 8px; margin: 7px 0; flex-wrap: wrap; }
+.vrow > label:first-child { width: 72px; color: var(--muted); }
+.vrow input[type=number] { width: 80px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; }
+.vrow input[type=range] { flex: 1; min-width: 100px; accent-color: var(--accent); }
+.vclips { display: flex; flex-wrap: wrap; gap: 10px; padding: 0; margin: 0; list-style: none; }
+.vclip { position: relative; width: 150px; border: 2px solid var(--line); border-radius: 8px; overflow: hidden; background: var(--panel); cursor: grab; }
+.vclip.sel { box-shadow: 0 0 0 2px var(--accent); }
+.vclip.over { outline: 2px dashed var(--accent); }
+.vclip img { width: 100%; aspect-ratio: 16/10; object-fit: cover; display: block; }
+.vclip .vk { position: absolute; left: 6px; top: 6px; background: rgba(0,0,0,.7); border-radius: 6px; padding: 1px 6px; font-size: 12px; }
+.vclip .vtr { position: absolute; left: -2px; top: 40%; background: var(--accent2); color: #fff; border-radius: 0 6px 6px 0; padding: 0 5px; font-size: 12px; }
+.vclip small { display: block; padding: 4px 6px; color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.vmus { display: flex; flex-wrap: wrap; gap: 12px; align-items: center; background: var(--panel); border: 1px solid var(--line);
+  border-radius: 10px; padding: 8px 12px; margin-bottom: 8px; }
+.vmus label { color: var(--muted); display: flex; gap: 6px; align-items: center; }
+.vmus input[type=number] { width: 70px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 4px 6px; }
+@media (max-width: 1000px) { .vtop { grid-template-columns: 1fr; } }
+
+/* 🎬+ auf der Kachel: ins Videoprojekt */
+.cell .vadd { position: absolute; top: 7px; right: 7px; font-size: 12px; background: rgba(0,0,0,.65); color: #fff; border-radius: 6px;
+  padding: 2px 6px; opacity: 0; transition: opacity .1s; }
+.cell:hover .vadd { opacity: 1; }
+.cell .vadd:hover { background: var(--accent2); }
+.vgrid.selecting .vadd { display: none; }
+
+/* Videoschnitt: Zeitleiste mit Spuren (nach Vorbild SCI-MO) */
+.vtransport { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 12px 0 8px; }
+.vtransport button { padding: 4px 10px; min-width: 34px; }
+.vtransport .vsep { width: 1px; height: 22px; background: var(--line); margin: 0 4px; }
+.vrate { min-width: 30px; text-align: center; color: var(--accent); font-variant-numeric: tabular-nums; }
+.vclock { margin-left: 10px; font-variant-numeric: tabular-nums; font-weight: 600; }
+.vtlbox { display: flex; border: 1px solid var(--line); border-radius: 10px; background: var(--panel); overflow: hidden; }
+.vheads { width: 132px; flex: none; border-right: 1px solid var(--line); background: var(--panel2); }
+.vh { height: 36px; display: flex; align-items: center; padding: 0 10px; font-size: 12px; color: var(--muted); border-bottom: 1px solid var(--line); }
+.vh-ruler { height: 24px; }
+.vh-v { height: 58px; }
+.vh-add { height: 44px; border-bottom: 0; }
+.vh-add button { padding: 4px 10px; font-size: 13px; }
+.vscroll { flex: 1; overflow-x: auto; overflow-y: hidden; }
+.vtl { position: relative; min-width: 100%; }
+.vrow { position: relative; height: 36px; border-bottom: 1px solid var(--line); }
+.vruler { height: 24px; background: var(--panel2); cursor: pointer; }
+.vtrack-v { height: 58px; }
+.vtrack-add { height: 44px; border-bottom: 0; }
+.vtick { position: absolute; top: 0; bottom: 0; border-left: 1px solid #4a525b; padding-left: 3px; font-size: 10px; color: var(--muted); white-space: nowrap; pointer-events: none; }
+.vblk { position: absolute; top: 6px; bottom: 6px; border-radius: 6px; padding: 4px 6px; font-size: 12px; color: #fff; overflow: hidden; white-space: nowrap;
+  text-overflow: ellipsis; cursor: pointer; border: 1px solid rgba(255,255,255,.15); }
+.vblk small { display: block; opacity: .8; }
+.vblk.sel { outline: 2px solid #fff; outline-offset: -2px; z-index: 1; }
+.vxf { position: absolute; top: 6px; bottom: 6px; background: repeating-linear-gradient(45deg, rgba(255,255,255,.35) 0 4px, transparent 4px 8px);
+  pointer-events: none; z-index: 2; border-radius: 4px; }
+.vtrm { position: absolute; top: 50%; transform: translate(-50%, -50%); z-index: 3; background: #f0c674; color: #111; font-size: 12px; font-weight: 700;
+  width: 24px; height: 24px; border-radius: 50%; display: grid; place-items: center; cursor: ew-resize; box-shadow: 0 1px 4px rgba(0,0,0,.6); user-select: none; }
+.vtrm.sel { background: #fff; outline: 2px solid var(--accent); }
+.vtrm.vfade { border-radius: 4px; background: #9aa0a6; }
+.vtrm.vfade[data-fade="in"] { transform: translate(0, -50%); }
+.vtrm.vfade[data-fade="out"] { transform: translate(-100%, -50%); }
+.vablk { position: absolute; top: 4px; bottom: 4px; background: rgba(67,181,129,.15); border: 1px solid rgba(67,181,129,.55); border-radius: 5px;
+  cursor: ns-resize; overflow: hidden; user-select: none; }
+.vablk i { position: absolute; left: 0; right: 0; bottom: 0; background: rgba(67,181,129,.55); pointer-events: none; }
+.vablk span { position: relative; font-size: 11px; padding: 2px 5px; color: #fff; pointer-events: none; }
+.vablk.sel { outline: 2px solid #fff; outline-offset: -2px; }
+.vmblk { position: absolute; top: 4px; bottom: 4px; border: 1px solid rgba(90,169,255,.75); border-radius: 5px; font-size: 12px; padding: 3px 6px; color: #fff;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; cursor: grab; user-select: none; }
+.vmblk small { opacity: .8; }
+.vmblk.sel { outline: 2px solid #fff; outline-offset: -2px; }
+.vhint { position: absolute; left: 10px; top: 50%; transform: translateY(-50%); font-size: 12px; color: var(--muted); pointer-events: none; }
+.vcursor { position: absolute; top: 0; bottom: 0; width: 2px; background: #ff5a5a; z-index: 5; pointer-events: none; }
+.vhover { position: absolute; top: 0; bottom: 0; width: 1px; background: rgba(255,255,255,.4); z-index: 4; pointer-events: none; display: none; }
+.vhover span { position: absolute; top: 2px; left: 4px; font-size: 10px; background: #000; padding: 0 3px; border-radius: 3px; }
+.vkeys { font-size: 12px; color: var(--muted); margin: 6px 2px 0; }
+.vprev { position: absolute; inset: 0; background: #000; z-index: 6; }
+.vprev video { width: 100%; height: 100%; object-fit: contain; }
+.vprevbar { position: absolute; left: 0; right: 0; top: 0; display: flex; align-items: center; justify-content: space-between; padding: 4px 8px;
+  background: rgba(0,0,0,.65); font-size: 12px; z-index: 7; }
+.vseg3 { display: flex; gap: 4px; margin-bottom: 10px; flex-wrap: wrap; }
+.vseg3 button.on { background: #22344a; color: #cfe5ff; border-color: #22344a; }
+.vtc { width: 90px; background: var(--panel2); border: 1px solid var(--line); border-radius: 8px; padding: 5px 8px; font-variant-numeric: tabular-nums; }
+.vmmenu { max-height: 360px; overflow: auto; min-width: 290px; }
+.vscreen .vwait { z-index: 8; }
+
+/* Videoschnitt: Hinweis-Kasten und gerenderte Effekt-Vorschau */
+.vscreen .vwait { position: absolute; left: 50%; top: 50%; right: auto; bottom: auto; transform: translate(-50%, -50%); z-index: 9;
+  background: rgba(17,19,21,.92); border: 1px solid var(--accent2); border-radius: 12px; padding: 16px 22px; text-align: center;
+  color: var(--text); font-size: 13px; line-height: 1.5; text-shadow: none; max-width: 85%; box-shadow: 0 6px 24px rgba(0,0,0,.6); }
+.vspin { width: 26px; height: 26px; margin: 0 auto 8px; border: 3px solid rgba(255,255,255,.2); border-top-color: var(--accent);
+  border-radius: 50%; animation: vspin 0.9s linear infinite; }
+@keyframes vspin { to { transform: rotate(360deg); } }
+.vprev { display: flex; flex-direction: column; }
+.vprev video { flex: 1; min-height: 0; }
+.vprevbar { position: static; flex: none; flex-wrap: wrap; gap: 6px; background: #2f5f9e; color: #fff; padding: 6px 10px; font-size: 13px; }
+.vprevbar small { display: block; opacity: .85; font-size: 11px; }
+.vprevbar button { padding: 3px 10px; font-size: 12px; margin-left: 6px; }
+.vprevband { position: absolute; top: 0; bottom: 0; background: rgba(90,169,255,.16); border-left: 2px solid var(--accent);
+  border-right: 2px solid var(--accent); z-index: 1; pointer-events: none; }
+.vprevband span { position: absolute; top: 2px; left: 4px; font-size: 10px; color: #cfe5ff; background: rgba(47,95,158,.9); padding: 0 4px; border-radius: 3px; }
+
+/* Umschalter Alle | Fotos | Videos oben */
+.kindsw { display: flex; border: 1px solid var(--line); border-radius: 10px; overflow: hidden; flex: none; }
+.kindsw button { border: 0; border-radius: 0; background: transparent; padding: 6px 11px; white-space: nowrap; }
+.kindsw button + button { border-left: 1px solid var(--line); }
+.kindsw button.on { background: #22344a; color: #cfe5ff; }
+@media (max-width: 900px) { .kindsw button { padding: 6px 7px; font-size: 12px; } }

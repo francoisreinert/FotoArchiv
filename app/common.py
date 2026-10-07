@@ -227,6 +227,10 @@ CREATE TABLE IF NOT EXISTS imports (
 CREATE TABLE IF NOT EXISTS album_removed (album_id INTEGER, item_id INTEGER, PRIMARY KEY (album_id, item_id));
 -- vom Nutzer als "kein Duplikat" bestätigt (mark_duplicates fasst sie nicht zusammen)
 CREATE TABLE IF NOT EXISTS dup_keep (item_id INTEGER PRIMARY KEY);
+-- Videoschnitt (video.py): Projekte und Renderliste
+CREATE TABLE IF NOT EXISTS vprojects (id INTEGER PRIMARY KEY, name TEXT, data TEXT, created TEXT, updated TEXT);
+CREATE TABLE IF NOT EXISTS vrenders (id INTEGER PRIMARY KEY, project INTEGER, name TEXT, status TEXT, progress REAL,
+    out TEXT, created TEXT, finished TEXT, error TEXT, seconds REAL, data TEXT);
 """
 
 BLOB_SCHEMA = "CREATE TABLE IF NOT EXISTS blobs (id INTEGER PRIMARY KEY, data BLOB NOT NULL);"
