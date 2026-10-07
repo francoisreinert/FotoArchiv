@@ -70,6 +70,65 @@ def crop_scale(e):
     return max(1.0, 1 / max(0.05, min(c[2], c[3])))
 
 
+GRID = 16  # Zellen entlang der längeren Bildseite für die örtliche Helligkeit (Tiefen/Lichter)
+LUMA = (0.2126, 0.7152, 0.0722)
+
+
+def lum_grid(src):
+    """Mittlere Helligkeit (0..1) je Rasterzelle eines uint8- oder float-Bildes (h, w, 3)."""
+    import numpy as np
+
+    h, w = src.shape[:2]
+    gx = max(1, round(GRID * w / max(w, h)))
+    gy = max(1, round(GRID * h / max(w, h)))
+    xs = np.array([i * w // gx for i in range(gx)])
+    ys = np.array([j * h // gy for j in range(gy)])
+    wts = np.array(LUMA, dtype=np.float32) / (255.0 if src.dtype == np.uint8 else 1.0)
+    sums = np.zeros((gy, gx), dtype=np.float64)
+    step = max(1, 2_000_000 // max(1, w * 3))
+    for y in range(0, h, step):
+        lum = src[y:y + step].astype(np.float32) @ wts
+        cols = np.add.reduceat(lum, xs, axis=1)
+        rows = np.searchsorted(ys, np.arange(y, y + lum.shape[0]), side="right") - 1
+        np.add.at(sums, rows, cols)
+    xe = np.append(xs, w)
+    ye = np.append(ys, h)
+    counts = np.outer(np.diff(ye), np.diff(xe))
+    return sums / counts
+
+
+def _pre_tone(v, e):
+    """Weiß/Schwarz, Belichtung und Kontrast – auf Raster-Helligkeiten (wie auf die Pixel)."""
+    g = lambda k: (e.get(k) or 0) / 100.0
+    blacks, whites = g("blacks"), g("whites")
+    if blacks or whites:
+        bp, wp = -blacks * 0.15, 1 - whites * 0.15
+        v = (v - bp) / max(1e-3, wp - bp)
+    if e.get("exposure"):
+        v = v * 2.0 ** (g("exposure") * 2)
+    if e.get("contrast"):
+        v = (v - 0.5) * (1 + g("contrast")) + 0.5
+    return v
+
+
+def _interp(n, cells):
+    """Für jede Pixelzeile/-spalte: untere Zelle, obere Zelle, Gewicht (bilinear zwischen Zellmitten)."""
+    import numpy as np
+
+    f = (np.arange(n, dtype=np.float32) + 0.5) / n * cells - 0.5
+    i0 = np.clip(np.floor(f), 0, cells - 1).astype(np.int64)
+    i1 = np.minimum(i0 + 1, cells - 1)
+    t = np.clip(f - i0, 0, 1).astype(np.float32)
+    return i0, i1, t
+
+
+def _smooth(a, b, x):
+    import numpy as np
+
+    t = np.clip((x - a) / (b - a), 0, 1)
+    return t * t * (3 - 2 * t)
+
+
 def geometry(im, e):
     if e.get("flip"):
         im = ImageOps.mirror(im)
@@ -91,11 +150,15 @@ def geometry(im, e):
     return im
 
 
-def tone(arr, e, y0=0, height=None):
-    """arr: float32 (h, w, 3) in 0..1, wird verändert. y0/height für streifenweise Vignette."""
+def tone(arr, e, y0=0, height=None, grid=None):
+    """arr: float32 (h, w, 3) in 0..1, wird verändert. y0/height für streifenweise Verarbeitung,
+    grid = lum_grid() des ganzen (unbearbeiteten) Bildes für Tiefen/Lichter."""
     import numpy as np
 
     g = lambda k: (e.get(k) or 0) / 100.0
+    sh, hl = g("shadows"), g("highlights")
+    if (sh or hl) and grid is None:
+        grid = lum_grid(arr)
     blacks, whites = g("blacks"), g("whites")
     if blacks or whites:
         bp, wp = -blacks * 0.15, 1 - whites * 0.15
@@ -107,15 +170,42 @@ def tone(arr, e, y0=0, height=None):
         arr -= 0.5
         arr *= 1 + g("contrast")
         arr += 0.5
-    sh, hl = g("shadows") * 0.5, g("highlights") * 0.5
     if sh or hl:
-        lum = np.clip(arr @ np.array([0.2126, 0.7152, 0.0722], dtype=np.float32), 0, 1)[..., None]
+        # Umgebungshelligkeit (Raster, bilinear) entscheidet, was Tiefe und was Licht ist
+        gb = np.clip(_pre_tone(grid, e), 0, 1).astype(np.float32)
+        h, w = arr.shape[:2]
+        full_h = height or h
+        gy, gx = gb.shape
+        r0, r1, rt = _interp(full_h, gy)
+        c0, c1, ct = _interp(w, gx)
+        r0, r1, rt = r0[y0:y0 + h], r1[y0:y0 + h], rt[y0:y0 + h][:, None]
+        top = gb[r0][:, c0] * (1 - ct) + gb[r0][:, c1] * ct
+        bot = gb[r1][:, c0] * (1 - ct) + gb[r1][:, c1] * ct
+        lb = top * (1 - rt) + bot * rt
+        lum = np.clip(arr @ np.array(LUMA, dtype=np.float32), 1e-4, 1)
+        ln = lum
         if sh:
-            ws = np.clip(1 - lum / 0.5, 0, 1) ** 2
-            arr += sh * ws * ((1 - arr) if sh > 0 else arr)
+            k = 1 + 1.5 * abs(sh) * (1 - _smooth(0.0, 0.6, lb))
+            ln = ln ** (1 / k) if sh > 0 else ln ** k
         if hl:
-            wh = np.clip((lum - 0.5) / 0.5, 0, 1) ** 2
-            arr += hl * wh * ((1 - arr) if hl > 0 else arr)
+            k = 1 + 1.5 * abs(hl) * _smooth(0.4, 1.0, lb)
+            ln = 1 - (1 - ln) ** (k if hl > 0 else 1 / k)
+        # Helligkeit voll, Farbe beim Aufhellen nur mit der Wurzel des Faktors – sonst wirkt es grell
+        f = ln / lum
+        cf = np.where(f > 1, np.sqrt(f), f)[..., None]
+        lum3 = lum[..., None]
+        arr -= lum3
+        arr *= cf
+        arr += ln[..., None]
+        # Kanal über 1: Sättigung zurücknehmen statt abschneiden – sonst kippt der Farbton (Rot wird Pink)
+        m = arr.max(axis=2)
+        over = m > 1
+        if over.any():
+            lnn = ln[..., None]
+            s = np.where(over, (1 - ln) / np.maximum(m - ln, 1e-6), 1)[..., None]
+            arr -= lnn
+            arr *= s
+            arr += lnn
     t, ti = g("temp"), g("tint")
     if t or ti:
         arr[..., 0] *= 1 + t * 0.12
@@ -156,10 +246,11 @@ def apply(im, e):
         w, h = im.size
         src = np.asarray(im)
         out = np.empty_like(src)
+        grid = lum_grid(src) if (e.get("shadows") or e.get("highlights")) else None
         step = max(1, 4_000_000 // max(1, w * 3))  # streifenweise: wenig Speicher auch bei 50 MP
         for y in range(0, h, step):
             a = src[y:y + step].astype(np.float32) / 255.0
-            tone(a, e, y, h)
+            tone(a, e, y, h, grid)
             out[y:y + step] = (a * 255.0 + 0.5).astype(np.uint8)
         im = Image.fromarray(out, "RGB")
     if e.get("sharpen"):

@@ -18,11 +18,50 @@ function zoomForAngle(w, h, deg) {
 }
 
 // Ton- und Farbregler auf RGBA-Pixel (wie edit.tone in Python)
+// Mittlere Helligkeit je Rasterzelle (wie edit.lum_grid) – vor allen Änderungen am Bild
+const EDIT_GRID = 16;
+function editLumGrid(d, w, h) {
+  const gx = Math.max(1, Math.round(EDIT_GRID * w / Math.max(w, h))), gy = Math.max(1, Math.round(EDIT_GRID * h / Math.max(w, h)));
+  const xs = [], ys = [];
+  for (let i = 0; i <= gx; i++) xs.push(i < gx ? Math.floor(i * w / gx) : w);
+  for (let j = 0; j <= gy; j++) ys.push(j < gy ? Math.floor(j * h / gy) : h);
+  const cx = new Int32Array(w), sums = new Float64Array(gx * gy);
+  for (let i = 0, x = 0; x < w; x++) { while (x >= xs[i + 1]) i++; cx[x] = i; }
+  for (let j = 0, y = 0, p = 0; y < h; y++) {
+    while (y >= ys[j + 1]) j++;
+    for (let x = 0; x < w; x++, p += 4) sums[j * gx + cx[x]] += (0.2126 * d[p] + 0.7152 * d[p + 1] + 0.0722 * d[p + 2]) / 255;
+  }
+  for (let j = 0; j < gy; j++) for (let i = 0; i < gx; i++) sums[j * gx + i] /= (xs[i + 1] - xs[i]) * (ys[j + 1] - ys[j]);
+  return { gx, gy, v: sums };
+}
+function editInterp(n, cells) {
+  const i0 = new Int32Array(n), i1 = new Int32Array(n), t = new Float32Array(n);
+  for (let k = 0; k < n; k++) {
+    const f = (k + 0.5) / n * cells - 0.5, a = Math.min(Math.max(Math.floor(f), 0), cells - 1);
+    i0[k] = a; i1[k] = Math.min(a + 1, cells - 1); t[k] = Math.min(Math.max(f - a, 0), 1);
+  }
+  return [i0, i1, t];
+}
+const editSmooth = (a, b, x) => { const t = Math.min(Math.max((x - a) / (b - a), 0), 1); return t * t * (3 - 2 * t); };
+
 function editTone(d, w, h, e) {
   const g = k => (e[k] || 0) / 100;
   const bl = g("blacks"), wh = g("whites"), bp = -bl * 0.15, wp = 1 - wh * 0.15, lv = bl || wh, lr = Math.max(1e-3, wp - bp);
   const ex = e.exposure ? Math.pow(2, g("exposure") * 2) : 1, ct = 1 + g("contrast");
-  const sh = g("shadows") * 0.5, hl = g("highlights") * 0.5;
+  const sh = g("shadows"), hl = g("highlights");
+  let gb = null, gx = 0, R = null, C = null;
+  if (sh || hl) {
+    // Umgebungshelligkeit: Raster aus dem unbearbeiteten Bild, mit Weiß/Schwarz/Belichtung/Kontrast umgerechnet
+    const G = editLumGrid(d, w, h);
+    gx = G.gx;
+    gb = G.v.map(v => {
+      if (lv) v = (v - bp) / lr;
+      v *= ex;
+      if (ct !== 1) v = (v - 0.5) * ct + 0.5;
+      return Math.min(1, Math.max(0, v));
+    });
+    R = editInterp(h, G.gy); C = editInterp(w, gx);
+  }
   const t = g("temp"), ti = g("tint"), sat = g("saturation"), vib = g("vibrance"), vig = g("vignette");
   const cl = v => v < 0 ? 0 : v > 1 ? 1 : v;
   for (let y = 0, i = 0; y < h; y++) {
@@ -33,15 +72,20 @@ function editTone(d, w, h, e) {
       if (ex !== 1) { r *= ex; gg *= ex; b *= ex; }
       if (ct !== 1) { r = (r - 0.5) * ct + 0.5; gg = (gg - 0.5) * ct + 0.5; b = (b - 0.5) * ct + 0.5; }
       if (sh || hl) {
-        const lum = cl(0.2126 * r + 0.7152 * gg + 0.0722 * b);
-        if (sh) {
-          const ws = Math.pow(cl(1 - lum / 0.5), 2) * sh;
-          if (sh > 0) { r += ws * (1 - r); gg += ws * (1 - gg); b += ws * (1 - b); } else { r += ws * r; gg += ws * gg; b += ws * b; }
-        }
-        if (hl) {
-          const wv = Math.pow(cl((lum - 0.5) / 0.5), 2) * hl;
-          if (hl > 0) { r += wv * (1 - r); gg += wv * (1 - gg); b += wv * (1 - b); } else { r += wv * r; gg += wv * gg; b += wv * b; }
-        }
+        // nur die Helligkeit über eine Kurve ändern – Farbton und Sättigung bleiben
+        const r0 = R[0][y], r1 = R[1][y], rt = R[2][y], c0 = C[0][x], c1 = C[1][x], ctt = C[2][x];
+        const top = gb[r0 * gx + c0] * (1 - ctt) + gb[r0 * gx + c1] * ctt, bot = gb[r1 * gx + c0] * (1 - ctt) + gb[r1 * gx + c1] * ctt;
+        const lb = top * (1 - rt) + bot * rt;
+        const lum = Math.min(1, Math.max(1e-4, 0.2126 * r + 0.7152 * gg + 0.0722 * b));
+        let ln = lum;
+        if (sh) { const k = 1 + 1.5 * Math.abs(sh) * (1 - editSmooth(0, 0.6, lb)); ln = sh > 0 ? Math.pow(ln, 1 / k) : Math.pow(ln, k); }
+        if (hl) { const k = 1 + 1.5 * Math.abs(hl) * editSmooth(0.4, 1, lb); ln = 1 - Math.pow(1 - ln, hl > 0 ? k : 1 / k); }
+        // Helligkeit voll, Farbe beim Aufhellen nur mit der Wurzel des Faktors (wie edit.py)
+        const f = ln / lum, cf = f > 1 ? Math.sqrt(f) : f;
+        r = ln + (r - lum) * cf; gg = ln + (gg - lum) * cf; b = ln + (b - lum) * cf;
+        // Kanal über 1: Sättigung zurücknehmen statt abschneiden (wie in edit.py)
+        const m = Math.max(r, gg, b);
+        if (m > 1) { const s = (1 - ln) / Math.max(m - ln, 1e-6); r = ln + (r - ln) * s; gg = ln + (gg - ln) * s; b = ln + (b - ln) * s; }
       }
       if (t || ti) { r *= 1 + t * 0.12; b *= 1 - t * 0.12; gg *= 1 - ti * 0.10; }
       if (sat || vib) {
