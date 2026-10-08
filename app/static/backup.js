@@ -42,7 +42,7 @@ routes.sicherung = async function () {
     ${has ? `<div class="card"><h2>⤓ Wiederherstellen</h2>
       <p class="muted">Ordner aus der Sicherung zurückholen – an den Originalplatz (nur was fehlt, nichts wird überschrieben) oder in einen anderen Ordner.
         Abgebrochene Downloads laufen an derselben Stelle weiter.</p>
-      <div class="row">Ziel ${tsel("rs-target", b.target)}</div><div id="rs-browser" class="bk-browser"></div>
+      <div class="row">Quelle (Sicherung) ${tsel("rs-target", b.target)}</div><div id="rs-browser" class="bk-browser"></div>
       <div class="row" style="margin-top:10px"><button id="rs-cat">Katalog aus der Sicherung …</button>
         <span class="muted">z. B. nach Plattentausch: Alben, Personen und Bearbeitungen zurückholen</span></div></div>
     <div class="card"><h2>🌐 Alben als Webseite</h2>
@@ -241,9 +241,9 @@ async function restoreBrowse(tid, path) {
   const d = await api(`/api/backup/browse?target=${encodeURIComponent(tid)}&path=${encodeURIComponent(path)}`).catch(e => ({ error: e.message }));
   if (d.error) { box.innerHTML = `<div class="bk-err">${esc(d.error)}</div>`; return; }
   const parts = path ? path.split("/") : [];
-  box.innerHTML = `<div class="crumbs"><a data-p="">Sicherung</a>${parts.map((x, i) => ` › <a data-p="${esc(parts.slice(0, i + 1).join("/"))}">${esc(x)}</a>`).join("")}</div>
+  box.innerHTML = `<div class="crumbs"><a data-p="">Sicherung (oberste Ebene)</a>${parts.map((x, i) => ` › <a data-p="${esc(parts.slice(0, i + 1).join("/"))}">${esc(x)}</a>`).join("")}</div>
     <div class="bk-list">${d.folders.map(f => `<div data-p="${esc((path ? path + "/" : "") + f)}">📁 ${esc(f)}</div>`).join("") || ""}
-      ${d.file_count ? `<div class="muted">${bkNum(d.file_count)} Dateien direkt in diesem Ordner</div>` : ""}
+      ${d.file_count ? `<div class="muted">${bkNum(d.file_count)} ${d.file_count === 1 ? "Datei" : "Dateien"} direkt in diesem Ordner</div>` : ""}
       ${!d.folders.length && !d.file_count ? '<div class="muted">leer – noch nichts gesichert?</div>' : ""}</div>
     ${path ? `<div class="row"><button class="primary" id="rs-orig">„${esc(parts[parts.length - 1])}“ an den Originalplatz zurückholen</button>
       <button id="rs-other">In anderen Ordner laden …</button></div>` : '<div class="muted">Ordner anklicken, um ihn zurückzuholen.</div>'}`;
