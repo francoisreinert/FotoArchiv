@@ -77,6 +77,9 @@ def _hamming(a, b):
     return bin((a ^ b) & 0xFFFFFFFFFFFFFFFF).count("1")
 
 
+DELETED = "(gelöscht)"  # Pfad-Platzhalter: früher endgültig gelöscht, nicht erneut importieren
+
+
 class LibraryIndex:
     """Was liegt schon auf der Platte? Aus dem Katalog aufgebaut, beim Import laufend ergänzt."""
 
@@ -86,6 +89,10 @@ class LibraryIndex:
         for path, name, kind, size, taken, w, h, ph in con.execute(
                 "SELECT path, name, kind, size, taken, width, height, phash FROM items"):
             self.add(path, name, kind, size, taken, w, h, ph)
+        # endgültig Gelöschtes nie wieder holen (trash.purge)
+        for name, kind, size, taken, w, h, ph in con.execute(
+                "SELECT name, kind, size, taken, width, height, phash FROM deleted_files"):
+            self.add(DELETED, name, kind, size, taken, w, h, ph)
 
     def add(self, path, name, kind, size, taken, w, h, ph):
         if name and size:
@@ -93,8 +100,14 @@ class LibraryIndex:
         if taken and len(taken) >= 19:
             self.by_time.setdefault(taken[14:19], []).append((taken, path, kind, w, h, ph))
 
-    def find(self, name, size, kind, taken=None, w=None, h=None, phash=None, content_required=False):
-        """Pfad der vorhandenen Datei oder None. content_required: Treffer nur mit passendem Bildinhalt."""
+    def find(self, *a, **kw):
+        """Pfad der vorhandenen Datei oder None (DELETED = früher endgültig gelöscht)."""
+        p = self._find(*a, **kw)
+        if p == DELETED:
+            JOB.note("Übersprungen, früher gelöscht: %s" % a[0])
+        return p
+
+    def _find(self, name, size, kind, taken=None, w=None, h=None, phash=None, content_required=False):
         p = self.by_name.get(((name or "").lower(), size))
         if p:
             return p
@@ -468,6 +481,8 @@ def apply_ledger(con):
     for source, key, path, tag, album, status in rows:
         iid = ids.get(path)
         if iid is None:
+            if path == DELETED:
+                done.append((source, key))
             continue
         # Herkunft nur bei wirklich neu kopierten Fotos vermerken
         if tag and status == "imported":

@@ -538,11 +538,11 @@ def mark_duplicates(con):
     PROGRESS.set_phase("Duplikate suchen")
     groups, photos, raws = {}, {}, []
     never = {r[0] for r in con.execute("SELECT item_id FROM dup_keep")}
-    for iid, folder, name, ext, kind, size, taken, w, h, ph in con.execute(
-            "SELECT id, folder, name, ext, kind, size, taken, width, height, phash FROM items "
+    for iid, folder, name, ext, kind, size, taken, w, h, ph, stack, ev in con.execute(
+            "SELECT id, folder, name, ext, kind, size, taken, width, height, phash, stack, ev_bias FROM items "
             "WHERE COALESCE(hidden,0) != 2 ORDER BY id"):
         if taken and w and taken_src_ok(taken):
-            groups.setdefault((taken, kind, min(w, h), max(w, h)), []).append((size or 0, iid, ph))
+            groups.setdefault((taken, kind, min(w, h), max(w, h)), []).append((size or 0, iid, ph, stack, ev))
         stem = (folder, name[:-(len(ext) + 1)].lower())
         if kind == "photo":
             photos.setdefault(stem, iid)
@@ -554,13 +554,16 @@ def mark_duplicates(con):
             continue
         members.sort(key=lambda m: (-m[0], m[1]))
         keep = []
-        for size, iid, ph in members:
-            for _ksize, kid, kph in ([] if iid in never else keep):
+        for size, iid, ph, st, ev in members:
+            for _ksize, kid, kph, kst, kev in ([] if iid in never else keep):
+                # Belichtungsreihe (stacks.py) bzw. andere Belichtungskorrektur: keine Kopie
+                if (st is not None and st == kst) or (ev is not None and kev is not None and ev != kev):
+                    continue
                 if ph is not None and kph is not None and bin((ph ^ kph) & 0xFFFFFFFFFFFFFFFF).count("1") <= 5:
                     dups.append((kid, iid))
                     break
             else:
-                keep.append((size, iid, ph))
+                keep.append((size, iid, ph, st, ev))
     con.execute("UPDATE items SET dup_of=NULL, raw_of=NULL")
     con.executemany("UPDATE items SET dup_of=? WHERE id=?", dups)
     con.executemany("UPDATE items SET raw_of=? WHERE id=?", [(photos[s], i) for s, i in raws if s in photos])
@@ -698,6 +701,10 @@ def run(full_faces=False):
             return
         geocode(con)
         import_mylio(con)
+        import stacks
+
+        PROGRESS.set_phase("Belichtungsreihen suchen")
+        stacks.detect(con)
         mark_duplicates(con)
         import faces
 
@@ -709,6 +716,13 @@ def run(full_faces=False):
         con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('index_complete', '1')")
         con.commit()
         PROGRESS.message = "Fertig"
+        try:
+            import docs
+
+            if docs.available() and docs.auto_level():
+                docs.scan()  # nur noch nicht geprüfte Fotos, im Hintergrund
+        except Exception:
+            pass
     except Exception as e:
         import traceback
 

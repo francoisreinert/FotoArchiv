@@ -12,6 +12,7 @@ Autoren. **Die vollständigen Lizenztexte liegen im Ordner `Lizenzen/`** (Python
 | Orts- und Länderdaten (`cities.txt`, `countries.txt`) | CC BY 4.0 – **Daten von GeoNames** | https://www.geonames.org |
 | Gesichtsfinder YuNet (`face_detection_yunet_2023mar.onnx`) | MIT | https://github.com/opencv/opencv_zoo |
 | Gesichtserkennung SFace (`face_recognition_sface_2021dec.onnx`) | Apache-2.0 | https://github.com/opencv/opencv_zoo |
+| Textdetektion PP-OCRv3 (`text_detection_ppocr.onnx`, für „Dokumente finden“) | Apache-2.0 (© PaddlePaddle Authors) | https://github.com/opencv/opencv_zoo |
 
 ## Laufzeit (Ordner `runtime/`, nur im fertigen ZIP)
 

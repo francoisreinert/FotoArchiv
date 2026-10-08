@@ -92,6 +92,7 @@ ALWAYS_EXCLUDED = {
     os.path.basename(BASE_DIR).lower(), "$recycle.bin", "system volume information", ".spotlight-v100",
     ".fseventsd", ".temporaryitems", ".trashes", ".documentrevisions-v100", ".claude", "htdocs",
     "fotoarchiv-papierkorb",  # gelöschte Fotos (trash.py)
+    "amazon photos",  # Kopien für die Amazon-Photos-App (webshare.py)
 }
 
 DEFAULT_CONFIG = {
@@ -292,6 +293,9 @@ CREATE TABLE IF NOT EXISTS imports (
 CREATE TABLE IF NOT EXISTS album_removed (album_id INTEGER, item_id INTEGER, PRIMARY KEY (album_id, item_id));
 -- vom Nutzer als "kein Duplikat" bestätigt (mark_duplicates fasst sie nicht zusammen)
 CREATE TABLE IF NOT EXISTS dup_keep (item_id INTEGER PRIMARY KEY);
+-- endgültig gelöscht (trash.purge): Merkmale, damit kein Import sie wieder holt (importer.LibraryIndex)
+CREATE TABLE IF NOT EXISTS deleted_files (name TEXT, kind TEXT, size INTEGER, taken TEXT, width INTEGER, height INTEGER,
+    phash INTEGER, deleted TEXT);
 -- Videoschnitt (video.py): Projekte und Renderliste
 CREATE TABLE IF NOT EXISTS vprojects (id INTEGER PRIMARY KEY, name TEXT, data TEXT, created TEXT, updated TEXT);
 CREATE TABLE IF NOT EXISTS vrenders (id INTEGER PRIMARY KEY, project INTEGER, name TEXT, status TEXT, progress REAL,
@@ -315,7 +319,9 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
                          ("hidden", "INTEGER DEFAULT 0"), ("usertaken", "TEXT"), ("usertags", "TEXT"),
                          ("private", "INTEGER DEFAULT 0"), ("priv_eff", "INTEGER DEFAULT 0"),
                          ("trashed", "TEXT"), ("trash_from", "TEXT"), ("trash_side", "TEXT"),
-                         ("edit", "TEXT")):
+                         ("edit", "TEXT"), ("doc_lines", "INTEGER"), ("doc_area", "REAL"), ("doc_no", "INTEGER DEFAULT 0"),
+                         ("ev_bias", "REAL"), ("exp_mode", "INTEGER"), ("stack", "INTEGER"), ("stack_top", "INTEGER"),
+                         ("doc_state", "INTEGER")):
             if col not in cols:
                 con.execute("ALTER TABLE items ADD COLUMN %s %s" % (col, typ))
         # Abdeckende Indizes: Übersicht, Kalender und Ordner lesen nur den Index statt jede Zeile
@@ -326,6 +332,8 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
                     "taken, kind, name)")
         for old in ("items_taken", "items_folder", "faces_person", "faces_cov_person"):  # durch die abdeckenden ersetzt
             con.execute("DROP INDEX IF EXISTS " + old)
+        con.execute("CREATE INDEX IF NOT EXISTS items_doc ON items(doc_lines)")  # Dokumente finden (docs.py)
+        con.execute("CREATE INDEX IF NOT EXISTS items_stack ON items(stack) WHERE stack IS NOT NULL")  # Belichtungsreihen
         con.execute("CREATE INDEX IF NOT EXISTS faces_cov_person2 ON faces(person_id, item_id, source, x, px, score)")
         con.execute("CREATE INDEX IF NOT EXISTS faces_cov_sugg ON faces(sugg_person, person_id, item_id)")
         acols = {r[1] for r in con.execute("PRAGMA table_info(albums)")}

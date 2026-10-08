@@ -37,6 +37,8 @@ FUNKTIONEN
                Ort ("Paris", "Italien"), Kamera ("iPhone"), Stichwörter, Beschreibungen.
                Personen: Namen tippen und aus der Liste wählen (mehrere = Fotos mit allen zusammen).
                "Filter": Zeitraum, nur Videos/Fotos, Favoriten, Fotos ohne sicheres Datum.
+               In einem Album, Ereignis, Ordner oder den Favoriten suchen und filtern Suche und Filter nur
+               dort ("nur in: … ✕" neben dem Suchfeld; ✕ sucht wieder in allen Fotos).
                Oben "Alle | 📷 Fotos | 🎬 Videos" trennt direkt – gilt für jede Ansicht (Alben, Ordner …).
                "📷 Kamera ▾" zeigt die Kameras der aktuellen Ansicht (Album, Jahr, Ordner, Suche) nach Marke
                und Modell, z. B. "GoPro" (alle GoPros) oder nur "GoPro HERO9 Black"; ✕ hebt den Filter auf.
@@ -103,6 +105,21 @@ VIDEOSCHNITT
   Historie); auf einem aktuellen Laptop etwa so schnell wie Echtzeit oder schneller. Das MP4 liegt in
   "FotoArchiv Export" auf dem Schreibtisch. Format 16:9, 9:16 (Handy), 1:1, 4:3, wahlweise 4K; bis 3 Stunden.
 
+DOKUMENTE FINDEN UND AUSSORTIEREN
+  FotoArchiv erkennt Fotos mit viel Text – Briefe, Rechnungen, Formulare, Notizen, Ausweise, Bildschirmfotos.
+  Erkannt wird nur, DASS Text zu sehen ist – gelesen wird nichts, alles bleibt auf dem Computer.
+  Automatisch: nach jedem Einlesen und jedem Import (iCloud, Takeout, Ordner) werden die neuen Fotos geprüft;
+  sichere Dokumente wandern aus Zeitleiste und Kalender nach "Dokumente › Neu" (die Dateien bleiben, wo sie
+  sind; in Ordnern, Alben und der Suche sind sie weiter zu sehen). Einstellbar oben: sichere / auch
+  unsichere / aus. Beim ersten Mal: "Jetzt einsortieren" für die schon erkannten.
+  Entscheiden (markieren, unten in der Leiste):
+    ✓ Behalten     dauerhaft – Album "Dokumente", bleibt aus der Zeitleiste
+    🗑 Papierkorb   kurzlebige Dokumentfotos
+    Kein Dokument  Fehltreffer – zurück in die Zeitleiste, wird nie wieder einsortiert
+  "Vorschläge" = unsichere Treffer, die noch in der Zeitleiste stehen ("Einsortieren" nimmt sie heraus).
+  Endgültig Gelöschtes (Papierkorb geleert) holt kein Import wieder – egal aus welcher Quelle
+  (gleicher Name+Größe oder gleiche Aufnahme). Im Import-Protokoll: "Übersprungen, früher gelöscht".
+
 WEITERE FOTOORDNER (NAS, zweite Platte, Ordner auf dem Computer)
   Bibliothek › "Weitere Fotoordner" › "+ Fotoordner hinzufügen …": Ordner wählen (oder Pfad eintippen,
   z. B. \\NAS\Fotos oder ein verbundenes Netzlaufwerk Z:\Fotos) und einen Namen geben, dann
@@ -115,6 +132,8 @@ WEITERE FOTOORDNER (NAS, zweite Platte, Ordner auf dem Computer)
   - Der FotoArchiv-Ordner selbst (Katalog) gehört auf den Computer oder die USB-Platte, nicht auf das NAS.
 
 LÖSCHEN
+  Ab 20 Dateien läuft Löschen/Wiederherstellen/Leeren im Hintergrund: unten links eine Karte mit Fortschritt
+  und Restzeit, man kann währenddessen weiterarbeiten.
   - Fotos/Videos: markieren und Taste Entf (oder "Mehr …" › In den Papierkorb), im Betrachter
     Entf oder 🗑. Ausgeblendete Duplikate und RAW-Partner (IMG_1.CR2 zu IMG_1.JPG) kommen mit,
     ebenso XMP/AAE-Begleitdateien.
@@ -137,6 +156,16 @@ DUPLIKATE
   die behaltene Datei über. "Kein Duplikat" (z. B. Serienbilder): alle bleiben dauerhaft getrennt.
   "Alle … Gruppen übernehmen" arbeitet im Hintergrund alle Vorschläge ab (anhaltbar).
 
+BELICHTUNGSREIHEN (BRACKETING)
+  Mindestens 3 Fotos derselben Kamera im selben Ordner, höchstens 2 Sekunden auseinander, mit
+  unterschiedlicher Belichtungskorrektur (z. B. −2 / 0 / +2 EV) oder von der Kamera als
+  Belichtungsreihe gekennzeichnet. Sie werden beim Einlesen erkannt und zu einem Stapel zusammengefasst:
+  im Raster nur das Titelbild (Belichtung am nächsten an 0) mit "❐ 3", im Betrachter unten alle
+  Belichtungen zum Durchklicken. Seitenleiste dort: "Als Titelbild der Reihe" oder "Reihe auflösen".
+  Filter › Belichtungsreihen: zusammengefasst / einzeln zeigen / nur Belichtungsreihen.
+  In Alben, bei Personen und in der Suche erscheinen alle Fotos einzeln. Fotos einer Reihe gelten nie
+  als Duplikate voneinander. Handyfotos werden nicht geprüft (Serienbilder haben gleiche Belichtung).
+
 PRIVAT
   Bibliothek › Privat › "Passwort festlegen". Danach lassen sich Fotos (markieren › "Mehr …"
   oder im Betrachter), Alben (inkl. Unteralben) und Ereignisse als privat markieren.
@@ -158,6 +187,39 @@ DIASHOW, VIDEO UND TEILEN
   Direkt in iCloud hochladen geht nicht: Apple bietet dafür keine Schnittstelle.
   Aufs Handy: "Teilen …" › "📱 Aufs Handy" zeigt einen QR-Code – mit der Handykamera scannen
            (gleiches WLAN), Fotos speichern. Link 15 Minuten gültig.
+
+SICHERUNG AUF S3 (Amazon S3 oder eigener S3-Speicher wie StorageGRID, MinIO …)
+  Menü "Sicherung" › "+ Ziel hinzufügen": Endpunkt (leer = Amazon S3), Region, Bucket, Ordner im Bucket,
+  Zugangsschlüssel und geheimer Schlüssel; "Verbindung testen". Eigene Speicher: Adressierung "Pfad",
+  bei selbst signiertem Zertifikat "nicht prüfen" oder die eigene Zertifizierungsstelle (.pem) angeben.
+  Die Schlüssel liegen nur in FotoArchiv/data/backup.json (wird nie weitergegeben).
+  "☁ Sicherung starten": alle Fotos, Videos und Begleitdateien mit gleicher Ordnerstruktur (ohne
+  FotoArchiv lesbar) plus Katalog (Alben, Personen, Bearbeitungen; Tageskopien der letzten 10 Läufe).
+  Nur Neues/Geändertes wird hochgeladen, große Dateien in Teilen. Läuft im Hintergrund, "Anhalten" geht
+  jederzeit; wird FotoArchiv beendet, geht es beim nächsten Start an derselben Stelle weiter.
+  Optional: Tempo begrenzen, automatisch alle 6 h / täglich / wöchentlich, Speicherklasse (Amazon:
+  DEEP_ARCHIVE am günstigsten, Abruf dauert bis 12 h), Verschlüsselung im Speicher.
+  Gelöschtes: standardmäßig bleibt es in der Sicherung (Schutz vor Versehen) – nach "Endgültig löschen"
+  zeigt FotoArchiv, wie viele Dateien weiterhin dort liegen; die Seite "Sicherung" listet sie ("liegen nur
+  noch in der Sicherung") mit "In der Sicherung löschen …". Mit dem Haken "Endgültig Gelöschtes auch in
+  der Sicherung löschen" geschieht das automatisch beim Papierkorb-Leeren (nicht schon beim Papierkorb).
+  Wiederherstellen: Ordner wählen › an den Originalplatz (nur Fehlendes, nichts wird überschrieben) oder
+  in einen anderen Ordner. "Katalog aus der Sicherung …" holt Alben, Personen usw. zurück (der bisherige
+  Katalog bleibt als data/catalog-vorher-….db), FotoArchiv startet dann neu.
+
+ALBUM ALS WEBSEITE (S3)
+  Im Album "🌐 Webseite": eine Seite mit allen Fotos/Videos des Albums (private nie) im Bucket unter
+  FotoArchiv-Web/. Privater Link, 7 Tage gültig ("Erneuern" unter Sicherung) – oder dauerhaft, wenn der
+  Bucket öffentliches Lesen für FotoArchiv-Web/ erlaubt (FotoArchiv setzt die Regel nur, wenn der Bucket
+  noch keine hat, sonst zeigt es den Text zum Ergänzen). Der Empfänger muss den S3-Speicher erreichen
+  können – ein Speicher nur im Firmen-/Heimnetz ist von außen nicht erreichbar.
+
+AMAZON PHOTOS
+  Amazon hat keine offene Schnittstelle – hochladen kann nur die Amazon-Photos-App. Ganze Bibliothek:
+  in der App die Ordner aus "Sicherung › Amazon Photos" hinzufügen, "nur Fotos" (Prime: Fotos unbegrenzt,
+  Videos nur 5 GB). Auswahl: im Album "Amazon" bzw. "★ Favoriten in den Amazon-Ordner" kopiert in
+  <Platte>/Amazon Photos/<Album> (Bearbeitungen angewendet, nur Neues); diesen Ordner in der App sichern.
+  Alben usw. lassen sich nur in Amazon Photos selbst verwalten.
 
 FERNSEHER & SAMSUNG THE FRAME
   Einrichten: Bibliothek › Fernseher › "Fernseher suchen" (oder IP eintragen) und übernehmen.

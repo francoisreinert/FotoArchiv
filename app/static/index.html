@@ -12,6 +12,7 @@
 <header id="top">
   <a class="brand" href="#/start">FotoArchiv</a>
   <div id="searchbox">
+    <span id="scope" hidden title="Suche und Filter gelten nur hier – ✕ sucht wieder in allen Fotos"></span>
     <div id="chips"></div>
     <input id="search" type="search" placeholder="Suchen: Ort, Ordner, Jahr, Monat, Kamera, Stichwort …" autocomplete="off">
     <div id="suggest" hidden></div>
@@ -31,6 +32,9 @@
   <label><input type="checkbox" id="f-fav"> nur Favoriten</label>
   <label><input type="checkbox" id="f-nodate"> ohne sicheres Datum</label>
   <label><input type="checkbox" id="f-dups"> Duplikate &amp; RAW-Kopien zeigen</label>
+  <label>Belichtungsreihen
+    <select id="f-stacks"><option value="">zusammengefasst</option><option value="open">einzeln zeigen</option><option value="only">nur Belichtungsreihen</option></select>
+  </label>
   <label>Sortierung
     <select id="f-sort"><option value="desc">Neueste zuerst</option><option value="asc">Älteste zuerst</option></select>
   </label>
@@ -46,11 +50,13 @@
     <a href="#/personen" data-nav="personen">Personen</a>
     <a href="#/karte" data-nav="karte">Karte</a>
     <a href="#/favoriten" data-nav="favoriten">Favoriten</a>
+    <a href="#/dokumente" data-nav="dokumente">Dokumente</a>
     <a href="#/video" data-nav="video">Videoschnitt</a>
     <a href="#/import" data-nav="import">Import</a>
     <a href="#/einstellungen" data-nav="einstellungen">Bibliothek</a>
     <a href="#/duplikate" data-nav="duplikate">Duplikate</a>
     <a href="#/papierkorb" data-nav="papierkorb">Papierkorb</a>
+    <a href="#/sicherung" data-nav="sicherung">Sicherung</a>
     <div id="years"></div>
   </nav>
   <main id="main"></main>
@@ -82,6 +88,10 @@
   <b class="sb-count"></b>
   <button class="ghost sb-all" title="Alle auswählen (Strg+A)">Alle</button>
   <span class="sb-spacer"></span>
+  <button data-act="dockeep" class="docbtn primary" hidden title="Dauerhaft behalten – Album „Dokumente“, nicht in der Zeitleiste">✓ Behalten</button>
+  <button data-act="docsort" class="docbtn" hidden title="Aus der Zeitleiste nehmen, unter „Neu“ entscheiden">Einsortieren</button>
+  <button data-act="docno" class="docbtn" hidden title="Kein Dokument – zurück in die Zeitleiste, wird nie wieder einsortiert">Kein Dokument</button>
+  <button data-act="del" class="docbtn danger" hidden title="Kurzlebige Dokumentfotos in den Papierkorb">🗑 Papierkorb</button>
   <button data-act="show" title="Diashow mit den markierten Fotos">▶ Diashow</button>
   <button data-act="share" title="Exportieren / teilen">Teilen …</button>
   <button data-act="fav" title="Als Favorit markieren">★ Favorit</button>
@@ -93,9 +103,12 @@
   <button data-act="more" title="Weitere Aktionen">Mehr …</button>
 </div>
 <div id="tvbar" hidden></div>
+<div id="jobbar" hidden></div>
+<div id="opbar" hidden></div>
 <div id="toast" hidden></div>
 <script src="/app.js"></script>
 <script src="/editor.js"></script>
 <script src="/video.js"></script>
+<script src="/backup.js"></script>
 </body>
 </html>

@@ -101,7 +101,27 @@ def build_where(p):
     if p.get("_hide_private"):
         where.append("COALESCE(i.priv_eff, 0) = 0")
     # Ausgeblendete Fotos nur in der Ansicht "Ausgeblendet", gelöschte nur im Papierkorb
-    where.append("COALESCE(i.hidden, 0) = %d" % {"1": 1, "2": 2}.get(p.get("hidden"), 0))
+    # hidden = 3: Foto einer Belichtungsreihe hinter ihrem Titelbild (stacks.py) – aufgeklappt, in Alben, bei Personen
+    # und in der Suche mit anzeigen, sonst zugeklappt
+    # hidden = 4: als Dokument einsortiert (docs.py) – nicht in Zeitleiste/Kalender, aber in Alben, Ordnern, Suche
+    hv = {"1": 1, "2": 2}.get(p.get("hidden"), 0)
+    docs_view = p.get("docs")
+    if docs_view == "neu":
+        where.append("i.hidden = 4 AND i.doc_state IS NULL")
+    elif docs_view == "behalten":
+        where.append("COALESCE(i.hidden, 0) IN (0, 3, 4) AND i.doc_state = 1")
+    elif hv == 0:
+        vis = {0}
+        if p.get("stacks") == "open" or p.get("album") or p.get("persons") or p.get("q"):
+            vis.add(3)
+        if p.get("album") or p.get("persons") or p.get("q") or (p.get("folder") or "") != "":
+            vis.add(4)
+        where.append("COALESCE(i.hidden, 0) = 0" if vis == {0} else
+                     "COALESCE(i.hidden, 0) IN (%s)" % ",".join(map(str, sorted(vis))))
+    else:
+        where.append("COALESCE(i.hidden, 0) = %d" % hv)
+    if p.get("stacks") in ("1", "only"):
+        where.append("i.stack IS NOT NULL")
     if cfg.get("hide_duplicates", True) and p.get("dups") != "1":
         where.append("i.dup_of IS NULL")
     if cfg.get("hide_raw_with_jpeg", True) and p.get("dups") != "1":
@@ -123,6 +143,15 @@ def build_where(p):
         t = t + "-12-31" if len(t) == 4 else (t + "-31" if len(t) == 7 else t)
         where.append("i.taken <= ?")
         args.append(t + " 23:59:59")
+    if p.get("doc"):  # Dokumente: mindestens so viele Textzeilen (docs.py), nicht als "kein Dokument" markiert
+        where.append("i.doc_lines >= ? AND COALESCE(i.doc_no, 0) = 0")
+        args.append(int(p["doc"]))
+        screen = ("(i.camera IS NULL AND (lower(i.ext) = 'png' OR i.name LIKE 'Screenshot%' "
+                  "OR i.name LIKE 'Bildschirmfoto%'))")
+        if p.get("doctype") == "screen":
+            where.append(screen)
+        elif p.get("doctype") == "paper":
+            where.append("NOT " + screen)
     cam = p.get("camera")
     if cam:
         if cam == "-":
@@ -210,6 +239,10 @@ def query_items(p):
         if kind == "video":
             videos.append(len(ids) - 1)
     out = {"ids": ids, "groups": groups, "videos": videos, "total": len(ids), "events": events_by_month()}
+    import stacks
+
+    sz = stacks.sizes(db())  # Belichtungsreihen: Stapel-Kennzeichen am Titelbild
+    out["stacks"] = [[k, sz[iid]] for k, iid in enumerate(ids) if iid in sz] if sz else []
     # gesperrt: Platzhalter statt Vorschau; entsperrt: Liste nur fürs Nicht-Zwischenspeichern
     out["locked" if p.get("_locked") else "private"] = private
     return out
@@ -616,6 +649,9 @@ def r_item(h, p, iid):
     d["browser_ok"] = (d["ext"] in common.BROWSER_IMAGE_EXT and (d["size"] or 0) < 40_000_000 and not rotfix
                        and not d["edit"])
     d["edit"] = json.loads(d["edit"]) if d["edit"] else None
+    import stacks
+
+    d["stack"] = stacks.members(c, iid)
     d["albums"] = [{"id": r[0], "name": r[1]} for r in c.execute(
         "SELECT a.id, a.name FROM album_items ai JOIN albums a ON a.id=ai.album_id WHERE ai.item_id=?", (int(iid),))]
     d["events"] = [{"id": r[0], "name": r[1]} for r in c.execute(
@@ -962,7 +998,7 @@ def r_albums(h, p):
         n, cover, open_cover = c.execute(
             "SELECT COUNT(*), MAX(ai.item_id), MAX(CASE WHEN COALESCE(i.priv_eff,0)=0 THEN ai.item_id END) "
             "FROM album_items ai JOIN items i ON i.id=ai.item_id "
-            "WHERE ai.album_id=? AND i.dup_of IS NULL AND COALESCE(i.hidden,0)=0", (aid,)).fetchone()
+            "WHERE ai.album_id=? AND i.dup_of IS NULL AND COALESCE(i.hidden,0) IN (0,3,4)", (aid,)).fetchone()
         cover = own_cover or cover
         if hide:
             if aid in priv_albums:
@@ -1036,9 +1072,14 @@ def r_items_fav(h, p):
 
 def r_items_hide(h, p):
     b = h.body()
-    db().executemany("UPDATE items SET hidden=? WHERE id=? AND COALESCE(hidden,0) != 2",
-                     [(1 if b.get("hidden") else 0, i) for i in _ids(b)])
+    import stacks
+
+    # Einblenden: Fotos einer Belichtungsreihe zurück in ihren Stapel
+    hv = 1 if b.get("hidden") else 0
+    db().executemany("UPDATE items SET hidden=CASE WHEN ?=0 AND stack IS NOT NULL AND stack_top=0 THEN 3 ELSE ? END "
+                     "WHERE id=? AND COALESCE(hidden,0) != 2", [(hv, hv, i) for i in _ids(b)])
     db().commit()
+    stacks.repair(db())
     _tree_cache.clear()
     h.send_json({"ok": True})
 
@@ -1169,8 +1210,7 @@ def r_album_delete(h, p, aid):
     if not row:
         return h.send_error(404)
     items = [r[0] for r in c.execute("SELECT item_id FROM album_items WHERE album_id=?", (aid,))]
-    if h.body().get("items"):
-        _trash_items(h, items)
+    job = _trash_items(h, items) if h.body().get("items") else False
     c.execute("UPDATE albums SET parent=? WHERE parent=?", (row[1], aid))
     c.execute("DELETE FROM album_items WHERE album_id=?", (aid,))
     c.execute("DELETE FROM albums WHERE id=?", (aid,))
@@ -1178,7 +1218,7 @@ def r_album_delete(h, p, aid):
         _remember_deleted(c, "a:" + row[0])
     c.commit()
     _refresh(items)
-    h.send_json({"ok": True})
+    h.send_json({"ok": True, "job": job})
 
 
 def _remember_deleted(c, key):
@@ -1264,8 +1304,9 @@ def r_event_delete(h, p, eid):
     row = c.execute("SELECT name, start, end, source FROM events WHERE id=?", (int(eid),)).fetchone()
     if not row:
         return h.send_error(404)
+    job = False
     if h.body().get("items"):
-        _trash_items(h, [r[0] for r in c.execute(
+        job = _trash_items(h, [r[0] for r in c.execute(
             "SELECT id FROM items WHERE taken >= ? AND taken <= ? AND dup_of IS NULL AND raw_of IS NULL "
             "AND COALESCE(hidden,0)=0", (row[1][:10], row[2][:10] + " 23:59:59"))])
     c.execute("DELETE FROM events WHERE id=?", (int(eid),))
@@ -1273,18 +1314,66 @@ def r_event_delete(h, p, eid):
         _remember_deleted(c, "e:" + row[0])
     c.commit()
     _refresh(_event_items(row[1], row[2]))
-    h.send_json({"ok": True})
+    h.send_json({"ok": True, "job": job})
 
 
 # ------------------------------------------------------------ Papierkorb ----
 
-def _trash_items(h, ids):
+# Größere Papierkorb-Aktionen laufen im Hintergrund (OP), die Oberfläche zeigt Fortschritt und Restzeit.
+OP = {"running": False, "title": "", "done": 0, "total": 0, "started": None, "result": None}
+OP_ASYNC_FROM = 20  # ab so vielen Dateien im Hintergrund
+
+
+def _op_start(title, total, fn):
+    """fn(progress) -> Ergebnis-dict, läuft in eigenem Thread (eigene DB-Verbindung über db())."""
+    if OP["running"]:
+        return False
+    OP.update(running=True, title=title, done=0, total=total, started=time.time(), result=None)
+
+    def run():
+        try:
+            OP["result"] = fn(lambda n: OP.__setitem__("done", n))
+        except Exception as ex:  # noqa: BLE001 – in der Oberfläche melden
+            OP["result"] = {"error": str(ex)}
+        finally:
+            _tree_cache.clear()
+            OP["running"] = False
+    threading.Thread(target=run, daemon=True).start()
+    return True
+
+
+def _op_or_now(h, title, total, fn):
+    """Kleine Mengen sofort, große im Hintergrund (Antwort {"job": true}, Ergebnis über /api/ops/status)."""
+    if total < OP_ASYNC_FROM:
+        res = fn(None)
+        _tree_cache.clear()
+        return h.send_json(res)
+    if not _op_start(title, total, fn):
+        return h.send_json({"error": "Es läuft schon eine Papierkorb-Aktion – bitte kurz warten"}, 409)
+    h.send_json({"ok": True, "job": True})
+
+
+def r_ops_status(h, p):
+    h.send_json(OP)
+
+
+def _trash_ids(h, ids):
     import trash
 
-    ids = trash.with_copies(db(), _visible_ids(h, ids))
-    n, errors = trash.move_to_trash(db(), ids)
+    return trash.with_copies(db(), _visible_ids(h, ids))
+
+
+def _trash_items(h, ids):
+    """Fotos eines Albums/Ereignisses mit in den Papierkorb (große Mengen im Hintergrund)."""
+    import trash
+
+    ids = _trash_ids(h, ids)
+    if len(ids) >= OP_ASYNC_FROM and _op_start("In den Papierkorb", len(ids), lambda prog: dict(
+            zip(("count", "errors"), trash.move_to_trash(db(), ids, prog)), ids=ids)):
+        return True
+    trash.move_to_trash(db(), ids)
     _tree_cache.clear()
-    return n, errors, ids
+    return False
 
 
 def _after_restore():
@@ -1297,8 +1386,14 @@ def _after_restore():
 
 
 def r_items_delete(h, p):
-    n, errors, ids = _trash_items(h, _ids(h.body()))
-    h.send_json({"ok": True, "count": n, "errors": errors[:20], "ids": ids})
+    import trash
+
+    ids = _trash_ids(h, _ids(h.body()))
+
+    def fn(prog):
+        n, errors = trash.move_to_trash(db(), ids, prog)
+        return {"ok": True, "count": n, "errors": errors[:20], "ids": ids}
+    _op_or_now(h, "In den Papierkorb", len(ids), fn)
 
 
 def r_folder_delete(h, p):
@@ -1311,9 +1406,13 @@ def r_folder_delete(h, p):
     if locked(h) and db().execute("SELECT 1 FROM items WHERE (folder=? OR folder LIKE ? ESCAPE '\\') AND priv_eff=1 "
                                   "LIMIT 1", (folder, like)).fetchone():
         return h.send_json({"error": "Der Ordner enthält private Fotos – bitte erst entsperren"}, 403)
-    n, errors, others = trash.trash_folder(db(), folder)
-    _tree_cache.clear()
-    h.send_json({"ok": True, "count": n, "errors": errors[:20], "others": others[:20], "others_total": len(others)})
+    total = db().execute("SELECT COUNT(*) FROM items WHERE (folder=? OR folder LIKE ? ESCAPE '\\') "
+                         "AND COALESCE(hidden,0) != 2", (folder, like)).fetchone()[0]
+
+    def fn(prog):
+        n, errors, others = trash.trash_folder(db(), folder, prog)
+        return {"ok": True, "count": n, "errors": errors[:20], "others": others[:20], "others_total": len(others)}
+    _op_or_now(h, "Ordner in den Papierkorb", total, fn)
 
 
 def r_trash_status(h, p):
@@ -1325,9 +1424,13 @@ def r_trash_status(h, p):
 def r_trash_restore(h, p):
     import trash
 
-    n, errors = trash.restore(db(), _visible_ids(h, _ids(h.body())))
-    _after_restore()
-    h.send_json({"ok": True, "count": n, "errors": errors[:20]})
+    ids = _visible_ids(h, _ids(h.body()))
+
+    def fn(prog):
+        n, errors = trash.restore(db(), ids, prog)
+        _after_restore()
+        return {"ok": True, "count": n, "errors": errors[:20]}
+    _op_or_now(h, "Wiederherstellen", len(ids), fn)
 
 
 def r_trash_purge(h, p):
@@ -1336,9 +1439,12 @@ def r_trash_purge(h, p):
     b = h.body()
     if locked(h):
         return h.send_json({"error": "Bitte zuerst Privates entsperren"}, 403)
-    n, errors = trash.purge(db(), None if b.get("all") else _ids(b))
-    _tree_cache.clear()
-    h.send_json({"ok": True, "count": n, "errors": errors[:20]})
+    ids = [r[0] for r in db().execute("SELECT id FROM items WHERE hidden=2")] if b.get("all") else _ids(b)
+
+    def fn(prog):
+        n, errors = trash.purge(db(), ids, prog)
+        return {"ok": True, "count": n, "errors": errors[:20], "backup": trash.LAST_BACKUP}
+    _op_or_now(h, "Endgültig löschen", len(ids), fn)
 
 
 # ------------------------------------------------------------- Duplikate ----
@@ -1437,7 +1543,7 @@ def r_stats(h, p):
     import trash
 
     c = db()
-    vis = "dup_of IS NULL AND raw_of IS NULL AND COALESCE(hidden,0)=0" + (" AND COALESCE(priv_eff,0)=0" if locked(h) else "")
+    vis = "dup_of IS NULL AND raw_of IS NULL AND COALESCE(hidden,0) IN (0,3,4)" + (" AND COALESCE(priv_eff,0)=0" if locked(h) else "")
     kinds = {}
     first = last = None
     for kind, n, size, lo, hi, fav, geo in c.execute(
@@ -1471,6 +1577,8 @@ def r_stats(h, p):
         "folders": c.execute("SELECT COUNT(DISTINCT folder) FROM items WHERE COALESCE(hidden,0) != 2").fetchone()[0],
         "dups": dups[0], "dups_size": dups[1],
         "hidden": c.execute("SELECT COUNT(*) FROM items WHERE hidden=1").fetchone()[0],
+        "stacks": c.execute("SELECT COUNT(DISTINCT stack), COUNT(*) FROM items WHERE stack IS NOT NULL "
+                            "AND COALESCE(hidden,0) IN (0,3)").fetchone(),
         "trash": trash.stats(c),
         "last_index": (c.execute("SELECT value FROM meta WHERE key='last_index'").fetchone() or [None])[0],
     })
@@ -2263,6 +2371,256 @@ def r_source_delete(h, p):
     h.send_json({"ok": True, "removed": len(ids)})
 
 
+def r_stacks_status(h, p):
+    import stacks
+
+    h.send_json(stacks.JOB)
+
+
+def r_stacks_scan(h, p):
+    import stacks
+
+    h.send_json({"ok": stacks.run_bg(after=_after_restore)})  # danach Duplikate neu (andere Belichtung ≠ Kopie)
+
+
+def r_stack_top(h, p, iid):
+    import stacks
+
+    h.send_json({"ok": stacks.set_top(db(), int(iid))})
+
+
+def r_stack_split(h, p, iid):
+    import stacks
+
+    h.send_json({"ok": True, "count": stacks.unstack(db(), int(iid))})
+
+
+# ------------------------------------------------- Sicherung (S3), Web-Alben, Amazon Photos ----
+
+def _bk_call(h, fn, *a):
+    import backup
+    import s3
+
+    try:
+        h.send_json(fn(*a))
+    except (ValueError, KeyError) as ex:
+        h.send_json({"error": str(ex).strip("'\"")}, 400)
+    except s3.S3Error as ex:
+        h.send_json({"error": backup.explain(ex)}, 400)
+
+
+def r_backup(h, p):
+    import backup
+
+    h.send_json(backup.public())
+
+
+def r_backup_target(h, p):
+    import backup
+
+    _bk_call(h, lambda: {"ok": True, "id": backup.save_target(h.body())})
+
+
+def r_backup_test(h, p):
+    import backup
+
+    _bk_call(h, backup.test_target, h.body())
+
+
+def r_backup_target_delete(h, p):
+    import backup
+
+    _bk_call(h, lambda: (backup.delete_target(h.body()["id"]), {"ok": True})[1])
+
+
+def r_backup_settings(h, p):
+    import backup
+
+    b = h.body()
+    d = backup.load()
+    for k in ("target", "videos", "dups", "previews", "limit_mbit", "auto_hours", "workers", "mirror_deletes"):
+        if k in b:
+            d["backup"][k] = b[k]
+    backup.save(d)
+    h.send_json({"ok": True})
+
+
+def r_backup_start(h, p):
+    import backup
+
+    _bk_call(h, lambda: {"ok": backup.start_backup()})
+
+
+def r_backup_stop(h, p):
+    import backup
+
+    backup.stop()
+    h.send_json({"ok": True})
+
+
+def r_backup_status(h, p):
+    import backup
+
+    h.send_json(backup.status())
+
+
+def r_backup_orphans(h, p):
+    """Dateien, die nur noch in der Sicherung liegen; POST mit delete=true löscht sie dort."""
+    import backup
+
+    if h.command == "POST":
+        b = h.body()
+        return _bk_call(h, lambda: {"ok": backup.start_prune(b["target"])})
+    _bk_call(h, backup.orphans, p.get("target", ""))
+
+
+def r_backup_browse(h, p):
+    import backup
+
+    _bk_call(h, backup.browse, p.get("target", ""), p.get("path", ""))
+
+
+def r_backup_restore(h, p):
+    import backup
+
+    b = h.body()
+    _bk_call(h, lambda: {"ok": backup.start_restore(b["target"], b.get("path", ""), (b.get("dest") or "").strip())})
+
+
+def r_backup_catalogs(h, p):
+    import backup
+
+    _bk_call(h, backup.catalogs, p.get("target", ""))
+
+
+def r_backup_catalog(h, p):
+    """Katalog aus der Sicherung holen, danach Neustart (der bisherige bleibt als catalog-vorher-….db)."""
+    import backup
+
+    b = h.body()
+
+    def run(tid, key):
+        backup.run_catalog(tid, key)
+        threading.Thread(target=_restart, daemon=True).start()
+    _bk_call(h, lambda: {"ok": backup.start("catalog", run, b["target"], b["key"])})
+
+
+def r_web(h, p):
+    import webshare
+
+    h.send_json(webshare.list_shares())
+
+
+def r_web_create(h, p):
+    import share
+    import webshare
+
+    b = h.body()
+    src = {k: b[k] for k in ("album", "event", "ids", "title") if b.get(k)}
+    if not (src.get("album") or src.get("event") or src.get("ids")) or not b.get("target"):
+        return h.send_json({"error": "Fotos und Ziel fehlen"}, 400)
+    if src.get("ids"):
+        src["ids"] = _visible_ids(h, [int(i) for i in src["ids"]])
+    ok = share.start(webshare.make_share, src, b["target"], "public" if b.get("mode") == "public" else "link",
+                     bool(b.get("videos", True)))
+    h.send_json({"ok": ok} if ok else {"error": "Es läuft schon ein Export – bitte warten"}, 200 if ok else 409)
+
+
+def r_web_renew(h, p, sid):
+    import webshare
+
+    _bk_call(h, lambda: {"ok": True, "url": webshare.renew(sid)})
+
+
+def r_web_delete(h, p, sid):
+    import webshare
+
+    _bk_call(h, lambda: {"ok": True, "count": webshare.remove(sid)})
+
+
+def r_web_public(h, p):
+    import webshare
+
+    if h.command == "POST":
+        b = h.body()
+        return _bk_call(h, webshare.public_setup, b["target"], True)
+    _bk_call(h, webshare.public_setup, p.get("target", ""), False)
+
+
+def r_amazon(h, p):
+    import webshare
+
+    h.send_json(webshare.amazon_overview())
+
+
+def r_amazon_sync(h, p):
+    import share
+    import webshare
+
+    b = h.body()
+    ok = share.start(webshare.amazon_sync, b.get("album"), bool(b.get("fav")), bool(b.get("videos")))
+    h.send_json({"ok": ok} if ok else {"error": "Es läuft schon ein Export – bitte warten"}, 200 if ok else 409)
+
+
+def r_docs_status(h, p):
+    import docs
+
+    h.send_json(docs.status(db()))
+
+
+def r_docs_scan(h, p):
+    import docs
+
+    try:
+        h.send_json({"ok": docs.scan()})
+    except RuntimeError as ex:
+        h.send_json({"error": str(ex)}, 400)
+
+
+def r_docs_stop(h, p):
+    import docs
+
+    docs.JOB["stop"] = True
+    h.send_json({"ok": True})
+
+
+def r_docs_not(h, p):
+    """Fehltreffer: "kein Dokument" – verschwindet dauerhaft aus der Dokumentenliste."""
+    import docs
+
+    docs.not_doc(db(), _visible_ids(h, _ids(h.body())))
+    _tree_cache.clear()
+    h.send_json({"ok": True})
+
+
+def r_docs_keep(h, p):
+    """Dokument dauerhaft behalten (Album "Dokumente", nicht in der Zeitleiste)."""
+    import docs
+
+    aid = docs.keep(db(), _visible_ids(h, _ids(h.body())))
+    h.send_json({"ok": True, "album": aid})
+
+
+def r_docs_sort(h, p):
+    """Ausgewählte (ids) oder alle erkannten (level) Dokumente aus der Zeitleiste einsortieren."""
+    import docs
+
+    b = h.body()
+    if b.get("ids"):
+        n = docs.sort_in(db(), _visible_ids(h, _ids(b)), "hand")
+    else:
+        n = docs.sort_in(db(), None, docs.LEVELS.get(b.get("level")) or None)
+    _tree_cache.clear()
+    h.send_json({"ok": True, "count": n})
+
+
+def r_docs_auto(h, p):
+    cfg = common.load_config()
+    cfg["docs_auto"] = h.body().get("auto", "streng")
+    common.save_config(cfg)
+    h.send_json({"ok": True})
+
+
 def r_quit(h, p):
     h.send_json({"ok": True})
     threading.Thread(target=lambda: (time.sleep(0.5), os._exit(0)), daemon=True).start()
@@ -2326,6 +2684,7 @@ ROUTES = [
     ("POST", r"/api/trash/restore", r_trash_restore),
     ("POST", r"/api/trash/purge", r_trash_purge),
     ("GET", r"/api/stats", r_stats),
+    ("GET", r"/api/ops/status", r_ops_status),
     ("GET", r"/api/dups", r_dups),
     ("POST", r"/api/dups/resolve", r_dups_resolve),
     ("POST", r"/api/dups/keep", r_dups_keep),
@@ -2371,6 +2730,39 @@ ROUTES = [
     ("GET", r"/edit-src/(\d+)", r_edit_src),
     ("POST", r"/api/item/(\d+)/edit", r_edit_save),
     ("POST", r"/api/library", r_library),
+    ("GET", r"/api/docs/status", r_docs_status),
+    ("GET", r"/api/backup", r_backup),
+    ("POST", r"/api/backup/target", r_backup_target),
+    ("POST", r"/api/backup/test", r_backup_test),
+    ("POST", r"/api/backup/target/delete", r_backup_target_delete),
+    ("POST", r"/api/backup/settings", r_backup_settings),
+    ("POST", r"/api/backup/start", r_backup_start),
+    ("POST", r"/api/backup/stop", r_backup_stop),
+    ("GET", r"/api/backup/status", r_backup_status),
+    ("GET", r"/api/backup/browse", r_backup_browse),
+    ("GET", r"/api/backup/orphans", r_backup_orphans),
+    ("POST", r"/api/backup/orphans", r_backup_orphans),
+    ("POST", r"/api/backup/restore", r_backup_restore),
+    ("GET", r"/api/backup/catalogs", r_backup_catalogs),
+    ("POST", r"/api/backup/catalog", r_backup_catalog),
+    ("GET", r"/api/web", r_web),
+    ("POST", r"/api/web", r_web_create),
+    ("POST", r"/api/web/(\d+)/renew", r_web_renew),
+    ("POST", r"/api/web/(\d+)/delete", r_web_delete),
+    ("GET", r"/api/web/public", r_web_public),
+    ("POST", r"/api/web/public", r_web_public),
+    ("GET", r"/api/amazon", r_amazon),
+    ("POST", r"/api/amazon/sync", r_amazon_sync),
+    ("GET", r"/api/stacks/status", r_stacks_status),
+    ("POST", r"/api/stacks/scan", r_stacks_scan),
+    ("POST", r"/api/item/(\d+)/stacktop", r_stack_top),
+    ("POST", r"/api/item/(\d+)/unstack", r_stack_split),
+    ("POST", r"/api/docs/scan", r_docs_scan),
+    ("POST", r"/api/docs/stop", r_docs_stop),
+    ("POST", r"/api/docs/not", r_docs_not),
+    ("POST", r"/api/docs/keep", r_docs_keep),
+    ("POST", r"/api/docs/sort", r_docs_sort),
+    ("POST", r"/api/docs/auto", r_docs_auto),
     ("POST", r"/api/sources", r_source_add),
     ("POST", r"/api/sources/path", r_source_path),
     ("POST", r"/api/sources/delete", r_source_delete),
@@ -2423,6 +2815,13 @@ def main():
         indexer.run()
         print(indexer.PROGRESS.snapshot())
         return
+    try:
+        import backup
+
+        if backup.apply_catalog_restore():  # Katalog aus der Sicherung (backup.py) einsetzen
+            print(" Katalog aus der Sicherung übernommen (der bisherige liegt als catalog-vorher-….db in data).")
+    except Exception as ex:
+        print(" Katalog aus der Sicherung nicht übernommen:", ex)
     connect().close()
     port = PORT
     if "--restart" in args:  # der alte Prozess gibt den Port gleich frei
@@ -2490,6 +2889,14 @@ def main():
                 print(" Unterbrochener Import wird fortgesetzt:", what)
         except Exception as ex:
             print(" Import-Fortsetzung nicht möglich:", ex)
+        try:
+            import backup
+
+            if backup.resume_pending():
+                print(" Unterbrochene Sicherung wird fortgesetzt.")
+            threading.Thread(target=backup.auto_loop, daemon=True).start()
+        except Exception as ex:
+            print(" Sicherung nicht fortgesetzt:", ex)
     threading.Timer(5, resume).start()
     try:
         srv.serve_forever()

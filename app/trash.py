@@ -94,8 +94,9 @@ def _move(src_rel, dst_rel):
     os.replace(src, dst)
 
 
-def move_to_trash(con, ids):
-    """Fotos/Videos in den Papierkorb verschieben. Gibt (Anzahl, Fehlerliste) zurück."""
+def move_to_trash(con, ids, progress=None):
+    """Fotos/Videos in den Papierkorb verschieben. Gibt (Anzahl, Fehlerliste) zurück.
+    progress(n): wird nach jeder Datei mit der Zahl der bearbeiteten aufgerufen (Fortschrittsanzeige)."""
     ids = list(ids)
     idset = set(ids)
     now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
@@ -122,11 +123,16 @@ def move_to_trash(con, ids):
             con.execute("UPDATE items SET path=?, hidden=2, trashed=?, trash_from=?, trash_side=?, dup_of=NULL, "
                         "raw_of=NULL WHERE id=?", (dst, now, path, json.dumps(side) if side else None, iid))
             done += 1
+            if progress:
+                progress(done + len(errors))
         con.commit()
+    import stacks
+
+    stacks.repair(con)  # Titelbild einer Belichtungsreihe gelöscht: nächstes nach vorn
     return done, errors
 
 
-def restore(con, ids):
+def restore(con, ids, progress=None):
     """Aus dem Papierkorb an den alten Platz zurücklegen."""
     done, errors = 0, []
     for ch in _chunks(list(ids)):
@@ -151,25 +157,33 @@ def restore(con, ids):
                         _move(sd, s)
                 except OSError:
                     pass
-            con.execute("UPDATE items SET path=?, hidden=0, trashed=NULL, trash_from=NULL, trash_side=NULL WHERE id=?",
-                        (orig, iid))
+            # Foto einer Belichtungsreihe kommt zurück in den Stapel (stacks.py)
+            con.execute("UPDATE items SET path=?, hidden=CASE WHEN stack IS NOT NULL AND stack_top=0 THEN 3 "
+                        "WHEN doc_state=1 THEN 4 ELSE 0 END, "
+                        "trashed=NULL, trash_from=NULL, trash_side=NULL WHERE id=?", (orig, iid))
             done += 1
+            if progress:
+                progress(done + len(errors))
         con.commit()
     for r in trash_roots():
         _cleanup_dirs(r)
     return done, errors
 
 
-def purge(con, ids=None):
+LAST_BACKUP = {}  # Ergebnis des letzten endgültigen Löschens für die S3-Sicherung (backup.on_purge)
+
+
+def purge(con, ids=None, progress=None):
     """Endgültig löschen (ids=None: ganzen Papierkorb leeren)."""
     import indexer
 
     if ids is None:
         ids = [r[0] for r in con.execute("SELECT id FROM items WHERE hidden=2")]
-    gone, errors = [], []
+    global LAST_BACKUP
+    gone, errors, originals = [], [], []
     for ch in _chunks(list(ids)):
-        for iid, path, side in con.execute("SELECT id, path, trash_side FROM items WHERE hidden=2 AND id IN (%s)"
-                                           % ",".join("?" * len(ch)), ch).fetchall():
+        for iid, path, side, orig in con.execute("SELECT id, path, trash_side, trash_from FROM items WHERE hidden=2 "
+                                                 "AND id IN (%s)" % ",".join("?" * len(ch)), ch).fetchall():
             if not in_trash(path):  # Sicherheitsnetz: nie außerhalb eines Papierkorbs löschen
                 continue
             try:
@@ -183,13 +197,26 @@ def purge(con, ids=None):
                     os.remove(to_abs(sd))
                 except OSError:
                     pass
+            originals += [orig] + [s for _sd, s in json.loads(side or "[]")]
             gone.append(iid)
+            if progress:
+                progress(len(gone) + len(errors))
+    now = datetime.datetime.now().strftime("%Y-%m-%d %H:%M:%S")
     for ch in _chunks(gone):
         ph = ",".join("?" * len(ch))
+        # nie wieder importieren (gleicher Name+Größe oder gleiche Aufnahme, siehe importer.LibraryIndex)
+        con.execute("INSERT INTO deleted_files SELECT name, kind, size, taken, width, height, phash, ? FROM items "
+                    "WHERE id IN (%s)" % ph, [now] + ch)
         con.execute("DELETE FROM album_items WHERE item_id IN (%s)" % ph, ch)
         con.execute("DELETE FROM album_removed WHERE item_id IN (%s)" % ph, ch)
     indexer.remove_items(con, gone)
     PREVIEWS.delete(gone)
+    try:
+        import backup
+
+        LAST_BACKUP = backup.on_purge(con, [o for o in originals if o])
+    except Exception:
+        LAST_BACKUP = {}
     if not con.execute("SELECT 1 FROM items WHERE hidden=2 LIMIT 1").fetchone():
         for r in trash_roots():
             _purge_leftovers(r)  # z. B. Begleitkram aus gelöschten Ordnern
@@ -198,13 +225,13 @@ def purge(con, ids=None):
     return len(gone), errors
 
 
-def trash_folder(con, folder):
+def trash_folder(con, folder, progress=None):
     """Ordner samt Unterordnern löschen: alle Fotos/Videos darin (auch ausgeblendete, Duplikate, RAW)
     in den Papierkorb. Andere Dateien bleiben liegen und werden gemeldet."""
     like = folder.replace("%", "\\%").replace("_", "\\_") + "/%"
     ids = [r[0] for r in con.execute("SELECT id FROM items WHERE (folder=? OR folder LIKE ? ESCAPE '\\') "
                                      "AND COALESCE(hidden,0) != 2", (folder, like))]
-    done, errors = move_to_trash(con, ids)
+    done, errors = move_to_trash(con, ids, progress)
     root = to_abs(folder)
     others = []
     for dirpath, _dirs, files in os.walk(root):

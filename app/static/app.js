@@ -52,9 +52,10 @@ function fmtSize(b) {
 const state = {
   persons: [],          // Liste aller Personen
   chips: [],            // gewählte Personen-Filter (ids)
-  filters: { q: "", from: "", to: "", kind: "", fav: false, nodate: false, dups: false, sort: "desc" },
+  filters: { q: "", from: "", to: "", kind: "", fav: false, nodate: false, dups: false, stacks: "", sort: "desc" },
   zoom: +(localStorageGet("zoom") || 190),
   priv: { password: false, unlocked: null },  // null = noch unbekannt (erster Statusabruf)
+  hasS3: false,         // S3-Ziel eingerichtet? Nur dann "🌐 Webseite" anbieten (backup.js)
 };
 function localStorageGet(k) { try { return localStorage.getItem(k); } catch { return null; } }
 function localStorageSet(k, v) { try { localStorage.setItem(k, v); } catch { /* egal */ } }
@@ -77,6 +78,7 @@ function filterParams(extra = {}) {
   if (f.fav) p.set("fav", "1");
   if (f.nodate) p.set("nodate", "1");
   if (f.dups) p.set("dups", "1");
+  if (f.stacks) p.set("stacks", f.stacks);  // Belichtungsreihen: "open" = einzeln, "only" = nur Reihen
   if (f.sort !== "desc") p.set("sort", f.sort);
   for (const [k, v] of Object.entries(extra)) if (v !== undefined && v !== null) p.set(k, v);
   state.lastExtra = extra;  // für die Kameraliste der aktuellen Ansicht
@@ -84,7 +86,7 @@ function filterParams(extra = {}) {
 }
 function hasFilters() {
   const f = state.filters;
-  return !!(f.q || state.chips.length || f.from || f.to || f.kind || f.camera || f.fav || f.nodate);
+  return !!(f.q || state.chips.length || f.from || f.to || f.kind || f.camera || f.fav || f.nodate || f.stacks === "only");
 }
 
 // ------------------------------------------------- Virtuelles Raster ----
@@ -94,6 +96,7 @@ class VGrid {
     this.ids = result.ids;
     this.groups = result.groups;
     this.videos = new Set(result.videos);
+    this.stacks = new Map(result.stacks || []);  // Index → Anzahl Fotos der Belichtungsreihe (Titelbild)
     this.lockedSet = new Set(result.locked || []);
     window.lockedIds = new Set((result.locked || []).map(i => result.ids[i]));
     this.events = result.events || {};
@@ -220,11 +223,12 @@ class VGrid {
       } else {
         for (let i = row.start; i < row.end; i++) {
           const d = document.createElement("div");
-          d.className = "cell" + (this.sel.has(i) ? " sel" : "");
+          d.className = "cell" + (this.sel.has(i) ? " sel" : "") + (this.stacks.has(i) ? " stack" : "");
           d.dataset.i = i;
           d.style.cssText = `top:${row.y}px;left:${(i - row.start) * this.size}px;width:${this.size}px;height:${this.size}px`;
           d.innerHTML = this.lockedSet.has(i) ? `<div class="lockcell" title="Privat – zum Entsperren klicken">🔒</div><span class="chk"></span>`
             : `<img decoding="async" src="${thumbUrl(this.ids[i])}" alt=""><span class="chk"></span>` + (this.videos.has(i) ? '<span class="vid">▶</span>' : "")
+              + (this.stacks.has(i) ? `<span class="stk" title="Belichtungsreihe mit ${this.stacks.get(i)} Fotos – im Betrachter unten alle Belichtungen">❐ ${this.stacks.get(i)}</span>` : "")
               + `<span class="vadd" title="Zum Videoprojekt hinzufügen (Shift+Klick: anderes Projekt)">🎬+</span>`;
           els.push(d);
         }
@@ -315,6 +319,7 @@ const routes = {
         ${tile("#/karte", s.geo, "mit Ort (GPS)")}
         ${tile("#/favoriten", s.fav, "Favoriten")}
         ${tile("#/duplikate", s.dups, "Duplikate", s.dups ? `${fmtSize(s.dups_size)} – prüfen und aufräumen` : "")}
+        ${s.stacks && s.stacks[0] ? tile("#/fotos", s.stacks[0], "Belichtungsreihen", `${num(s.stacks[1])} Fotos, zu je einem Stapel zusammengefasst`).replace("<a ", '<a id="st-stacks" ') : ""}
         ${s.hidden ? tile("#/ausgeblendet", s.hidden, "Ausgeblendet") : ""}
         ${s.trash.count ? tile("#/papierkorb", s.trash.count, "im Papierkorb", fmtSize(s.trash.size)) : ""}
       </div>
@@ -330,6 +335,8 @@ const routes = {
           <span>${esc(pl)}</span><small>${num(n)}</small></a>`).join("")}</div>` : ""}
       </div>
       ${s.last_index ? `<p class="muted">Zuletzt eingelesen: ${esc(fmtDate(s.last_index.replace("T", " ")))}</p>` : ""}`;
+    const stk = $("#st-stacks", page);
+    if (stk) stk.onclick = () => { state.filters.stacks = "only"; $("#f-stacks").value = "only"; markFilterBtn(); };
     personsReady.then(() => {
       const persons = state.persons.filter(p => !p.hidden && p.items).sort((a, b) => b.items - a.items).slice(0, 8);
       const box = $("#toppers", page);
@@ -437,6 +444,7 @@ const routes = {
     const a = d.albums.find(x => x.id === +id);
     if (!a) { main.innerHTML = `<div class="empty">Album nicht gefunden.</div>`; return; }
     if (a.private_eff && !state.priv.unlocked) return lockScreen(`Das Album „${a.name}“ ist privat.`);
+    setSearchScope(`Album „${a.name}“`);
     const kids = d.albums.filter(x => x.parent === a.id);
     const parent = d.albums.find(x => x.id === a.parent);
     const page = document.createElement("div");
@@ -476,7 +484,7 @@ const routes = {
       const r = await confirmCheck(`Album „${a.name}“ löschen? Ohne Haken bleiben die Fotos erhalten, nur das Album verschwindet.`,
         `Auch die ${a.count.toLocaleString("de-DE")} Fotos/Videos des Albums in den Papierkorb legen`);
       if (!r) return;
-      await api(`/api/albums/${a.id}/delete`, { items: r.checked });
+      await apiOp(`/api/albums/${a.id}/delete`, { items: r.checked });
       if (r.checked) loadYears().catch(() => {});
       location.hash = parent ? "#/album/" + parent.id : "#/alben";
     };
@@ -484,7 +492,11 @@ const routes = {
     const head = document.createElement("div");
     head.className = "gridhead";
     head.innerHTML = `<h2 style="margin:0;font-size:20px">${esc(a.name)}</h2><span class="count">${res.total.toLocaleString("de-DE")} Fotos</span>
-      <button class="ghost" data-show>▶ Diashow</button><button class="ghost" data-share>Teilen …</button>${zoomButtons()}`;
+      <button class="ghost" data-show>▶ Diashow</button><button class="ghost" data-share>Teilen …</button>
+      ${state.hasS3 ? '<button class="ghost" data-web title="Album als Webseite auf deinem S3-Speicher teilen">🌐 Webseite</button>' : ""}
+      <button class="ghost" data-amz title="Album in den Ordner für die Amazon-Photos-App kopieren">Amazon</button>${zoomButtons()}`;
+    if ($("[data-web]", head)) $("[data-web]", head).onclick = () => albumWebDialog(a);
+    $("[data-amz]", head).onclick = () => albumAmazon(a);
     $("[data-show]", head).onclick = () => slideshowDialog(res.ids, a.name);
     $("[data-share]", head).onclick = () => shareDialog(res.ids, a.name);
     main.appendChild(head);
@@ -497,10 +509,13 @@ const routes = {
     const e = d.events.find(x => x.id === +id);
     if (!e) { clearMain(); main.innerHTML = `<div class="empty">Ereignis nicht gefunden.</div>`; return; }
     if (e.private && !state.priv.unlocked) return lockScreen(`Das Ereignis „${e.name}“ ist privat.`);
+    setSearchScope(`Ereignis „${e.name}“`);
     await showGrid(e.name, { event: e.id }, {
       headExtra: `<span class="muted">${fmtRange(e.start, e.end)}</span><button id="epriv">${e.private ? "Privat aufheben" : "🔒 Privat"}</button><button id="eren">Umbenennen</button>
-        <button id="edate">Zeitraum ändern</button><button id="edel" class="danger">Löschen</button>`,
+        <button id="edate">Zeitraum ändern</button><button id="edel" class="danger">Löschen</button>
+        ${state.hasS3 ? '<button id="eweb" class="ghost" title="Ereignis als Webseite auf deinem S3-Speicher teilen">🌐 Webseite</button>' : ""}`,
       bind: head => {
+        if ($("#eweb", head)) $("#eweb", head).onclick = () => webDialog({ event: e.id }, e.name);
         $("#epriv", head).onclick = async () => {
           if (!e.private && !await ensurePassword()) return;
           await api(`/api/events/${e.id}`, { private: !e.private });
@@ -519,7 +534,7 @@ const routes = {
           const r = await confirmCheck(`Ereignis „${e.name}“ löschen? Ohne Haken bleiben die Fotos erhalten.`,
             `Auch die ${e.count.toLocaleString("de-DE")} Fotos/Videos dieses Zeitraums in den Papierkorb legen`);
           if (!r) return;
-          await api(`/api/events/${e.id}/delete`, { items: r.checked });
+          await apiOp(`/api/events/${e.id}/delete`, { items: r.checked });
           if (r.checked) loadYears().catch(() => {});
           location.hash = "#/alben";
         };
@@ -527,12 +542,14 @@ const routes = {
     });
   },
   async ausgeblendet() {
+    setSearchScope("Ausgeblendete");
     await showGrid("Ausgeblendete Fotos", { hidden: "1" }, {
       context: { hidden: true },
       empty: "Keine ausgeblendeten Fotos. Fotos markieren und unter „Mehr …“ ausblenden – sie verschwinden dann aus allen Ansichten, bleiben aber auf der Festplatte.",
     });
   },
   async papierkorb() {
+    setSearchScope("Papierkorb");
     const t = await api("/api/trash");
     await showGrid("Papierkorb", { hidden: "2" }, {
       context: { trash: true },
@@ -544,7 +561,7 @@ const routes = {
         if (!t.count) return;
         $("#trest", head).onclick = async () => {
           if (!currentGrid) return;
-          const r = await api("/api/trash/restore", { ids: currentGrid.ids });
+          const r = await apiOp("/api/trash/restore", { ids: currentGrid.ids });
           toast(`${r.count.toLocaleString("de-DE")} wiederhergestellt`);
           reportErrors(r);
           loadYears().catch(() => {});
@@ -554,8 +571,8 @@ const routes = {
           if (!await confirmBox(`Papierkorb leeren? ${t.count.toLocaleString("de-DE")} Dateien (${fmtSize(t.size)}) werden endgültig ` +
             "von der Platte gelöscht. Das lässt sich nicht rückgängig machen.")) return;
           toast("Papierkorb wird geleert …", 60000);
-          const r = await api("/api/trash/purge", { all: true });
-          toast(`${r.count.toLocaleString("de-DE")} Dateien endgültig gelöscht`);
+          const r = await apiOp("/api/trash/purge", { all: true });
+          toast(`${r.count.toLocaleString("de-DE")} Dateien endgültig gelöscht` + backupNote(r), 9000);
           reportErrors(r);
           route();
         };
@@ -682,12 +699,77 @@ const routes = {
       pollJob();
     };
   },
+  async dokumente() {
+    setSearchScope("Dokumente");
+    const st = await api("/api/docs/status");
+    const tab = localStorageGet("docTab") || "neu";
+    const level = localStorageGet("docLevel") || "normal", type = localStorageGet("docType") || "";
+    const LV = { streng: 14, normal: 10, weit: 6 };
+    const opt = (v, l, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`;
+    const num = n => (n || 0).toLocaleString("de-DE");
+    const tabs = `<div class="doctabs">
+      <button data-tab="neu" class="${tab === "neu" ? "on" : ""}" title="Automatisch einsortiert, noch nicht entschieden">Neu <small>${num(st.neu)}</small></button>
+      <button data-tab="behalten" class="${tab === "behalten" ? "on" : ""}" title="Dauerhaft behalten (Album „Dokumente“)">Behalten <small>${num(st.behalten)}</small></button>
+      <button data-tab="vorschlag" class="${tab === "vorschlag" ? "on" : ""}" title="Unsichere Treffer – noch in der Zeitleiste">Vorschläge <small>${num(st.vorschlag)}</small></button></div>`;
+    const scanInfo = st.running
+      ? `<div class="docscan"><b>📄 Dokumente werden gesucht …</b> ${num(st.done)} von ${num(st.total)} Fotos geprüft${st.eta ? " · noch ca. " + fmtEta(st.eta) : ""}
+          ${st.sorted ? ` · ${num(st.sorted)} einsortiert` : ""}<div class="progress"><i style="width:${st.total ? (100 * st.done / st.total).toFixed(1) : 0}%"></i></div>
+          <button id="dstop">Anhalten</button></div>`
+      : st.open ? `<div class="docscan"><b>${num(st.open)} Fotos sind noch nicht geprüft.</b>
+          ${st.open > 2000 ? `Einmalig im Hintergrund, etwa ${fmtEta(st.open / 30)}.` : ""}
+          <button class="primary" id="dscan">📄 Jetzt prüfen</button> ${st.message ? `<span class="muted">${esc(st.message)}</span>` : ""}</div>` : "";
+    const sortInfo = st.unsorted_auto && st.auto !== "aus" ? `<div class="docscan"><b>${num(st.unsorted_auto)} sichere Dokumente stehen noch in der Zeitleiste.</b>
+        <button class="primary" id="dsortall">Jetzt einsortieren</button> <span class="muted">Sie wandern nach „Neu“ – die Dateien bleiben, wo sie sind.</span></div>` : "";
+    const params = tab === "vorschlag" ? { doc: LV[level] || 10, doctype: type } : { docs: tab, doctype: type };
+    const help = {
+      neu: "Automatisch erkannte Dokumentfotos – nicht mehr in Zeitleiste und Kalender. Markieren und entscheiden: <b>✓ Behalten</b> (Album „Dokumente“), <b>🗑 Papierkorb</b> (kurzlebige) oder <b>Kein Dokument</b> (zurück in die Zeitleiste). Gelöschte holt kein Import wieder.",
+      behalten: "Dauerhaft behaltene Dokumente – auch im Album „Dokumente“. Nicht in Zeitleiste und Kalender.",
+      vorschlag: "Fotos mit etwas Text, bei denen es nicht sicher ist. Sie stehen noch in der Zeitleiste. Markieren › <b>Einsortieren</b>, <b>✓ Behalten</b> oder <b>Kein Dokument</b>.",
+    }[tab];
+    await showGrid("📄 Dokumente", params, {
+      context: { docs: tab },
+      headExtra: `<select id="dtype" title="Art">${opt("", "Alle", type)}${opt("paper", "Papier (Briefe, Rechnungen …)", type)}${opt("screen", "Bildschirmfotos", type)}</select>
+        ${tab === "vorschlag" ? `<select id="dlevel" title="Wie viel Text muss zu sehen sein?">${opt("streng", "streng (viel Text)", level)}${opt("normal", "normal", level)}${opt("weit", "weit (auch wenig Text)", level)}</select>` : ""}
+        <button id="dall">Alle auswählen</button>
+        <select id="dauto" title="Neue Fotos (z. B. nach einem Import) automatisch prüfen und einsortieren">
+          ${opt("streng", "Automatisch: sichere einsortieren", st.auto)}${opt("normal", "Automatisch: auch unsichere", st.auto)}${opt("aus", "Automatisch: aus", st.auto)}</select>`,
+      empty: { neu: "Nichts Neues – alles entschieden.", behalten: "Noch keine Dokumente behalten.", vorschlag: "Keine weiteren Vorschläge." }[tab],
+      bind: head => {
+        $("#dtype", head).onchange = e => { localStorageSet("docType", e.target.value); route(); };
+        const dl = $("#dlevel", head);
+        if (dl) dl.onchange = e => { localStorageSet("docLevel", e.target.value); route(); };
+        $("#dall", head).onclick = () => currentGrid && currentGrid.selectAll();
+        $("#dauto", head).onchange = async e => { await api("/api/docs/auto", { auto: e.target.value }); toast("Gespeichert"); route(); };
+      },
+    });
+    main.insertAdjacentHTML("afterbegin", `<div class="page" style="padding-bottom:0">${tabs}${scanInfo}${sortInfo}<p class="muted" style="margin:8px 0 0">${help}</p></div>`);
+    $$(".doctabs [data-tab]").forEach(b => b.onclick = () => { localStorageSet("docTab", b.dataset.tab); route(); });
+    const scan = $("#dscan"), stop = $("#dstop"), sortall = $("#dsortall");
+    if (scan) scan.onclick = async () => { try { await api("/api/docs/scan", {}); route(); } catch (e) { toast(e.message, 8000); } };
+    if (stop) stop.onclick = async () => { await api("/api/docs/stop", {}); toast("Wird angehalten …"); };
+    if (sortall) sortall.onclick = async () => {
+      const r = await api("/api/docs/sort", { level: st.auto });
+      toast(`${num(r.count)} Dokumente einsortiert`);
+      localStorageSet("docTab", "neu");
+      loadYears().catch(() => {});
+      route();
+    };
+    if (st.running) setTimeout(() => { if (location.hash.startsWith("#/dokumente") && !(currentGrid && currentGrid.sel.size)) route(); }, 15000);
+  },
   async favoriten() {
+    setSearchScope("Favoriten");
     await showGrid("Favoriten", { fav: "1" }, { empty: "Noch keine Favoriten. Im Betrachter mit ☆ oder Taste F markieren. Mylio-Bewertungen ab 4 Sternen erscheinen hier auch." });
   },
   async ordner(path) {
     clearMain();
     path = path || "";
+    if (path) {
+      const last = path.split("/").pop();
+      setSearchScope(`Ordner „${last.startsWith("@") ? last.slice(1) : last}“`);
+      if (state.filters.q || state.chips.length)
+        return showGrid(`🔎 ${last.startsWith("@") ? last.slice(1) : last} (mit Unterordnern)`, { folder: path, recursive: "1" },
+          { empty: "Keine Treffer in diesem Ordner." });
+    }
     const d = await api("/api/folders?path=" + encodeURIComponent(path));
     const page = document.createElement("div");
     page.className = "page";
@@ -706,7 +788,7 @@ const routes = {
       if (!await confirmBox(`Ordner „${path}“ mit allen Unterordnern löschen? Die ${(d.total || 0).toLocaleString("de-DE")} Fotos/Videos darin ` +
         "(auch ausgeblendete, Duplikate und RAW) wandern in den Papierkorb und lassen sich wiederherstellen. Andere Dateien bleiben im Ordner.")) return;
       toast("Ordner wird in den Papierkorb gelegt …", 60000);
-      const r = await api("/api/folders/delete", { path });
+      const r = await apiOp("/api/folders/delete", { path });
       toast(`${r.count.toLocaleString("de-DE")} Dateien in den Papierkorb gelegt` + (r.others_total
         ? ` · ${r.others_total} andere Datei(en) blieben im Ordner, z. B. ${r.others[0].split("/").pop()}` : ""), 9000);
       reportErrors(r);
@@ -955,13 +1037,13 @@ const routes = {
     page.innerHTML = `<h1>Import <small>neue Fotos auf die Platte holen – bereits vorhandene werden erkannt und übersprungen</small></h1>
       <div class="card" id="jobcard" hidden></div>
       <div class="card"><h2>iCloud Fotos</h2>
-        <p class="help">Holt neue Fotos und Videos aus iCloud, auch aus einer <b>geteilten Bibliothek</b> (z. B. wenn Nina ihre Bibliothek mit dir teilt).
+        <p class="help">Holt neue Fotos und Videos aus iCloud, auch aus einer <b>geteilten Bibliothek</b> (z. B. wenn jemand aus der Familie seine Bibliothek mit dir teilt).
         Was schon auf der Platte liegt, wird anhand von Name, Größe, Aufnahmezeit und Bildmaßen erkannt und gar nicht erst heruntergeladen.
         Neue Dateien landen in <b>Bilder/Jahr</b> mit dem Stichwort „iCloud …“.</p>
         <div id="accs"></div>
         <details style="margin-top:10px"><summary style="cursor:pointer">iCloud-Konto hinzufügen</summary>
           <div class="form">
-            <label>Name</label><input type="text" id="ic-label" placeholder="z. B. Nina">
+            <label>Name</label><input type="text" id="ic-label" placeholder="z. B. Anna">
             <label>Apple-ID</label><input type="email" id="ic-id" placeholder="name@icloud.com" autocomplete="off">
             <label>Passwort</label><input type="password" id="ic-pw" autocomplete="off">
             <span></span><div class="row"><button class="primary" id="ic-login">Anmelden</button></div>
@@ -971,7 +1053,7 @@ const routes = {
             <span class="ic-code" hidden></span><div class="help ic-code" hidden id="ic-hint"></div>
           </div>
           <p class="help">Das Passwort wird nur zur Anmeldung an Apple geschickt und <b>nicht gespeichert</b>. Apple schickt danach einen Code auf ein Gerät
-          des Kontos (bei Ninas Konto also auf Ninas iPhone). Die Anmeldung hält dann meist 1–2 Monate, danach einfach neu anmelden.
+          des Kontos (beim Konto einer anderen Person also auf deren iPhone). Die Anmeldung hält dann meist 1–2 Monate, danach einfach neu anmelden.
           Funktioniert nur, wenn in den iCloud-Einstellungen „Auf iCloud-Daten im Web zugreifen“ an und „Erweiterter Datenschutz“ aus ist.</p>
         </details>
       </div>
@@ -1378,6 +1460,13 @@ function askName(title, value = "", persons = false) {
     $("#askno", p).onclick = () => { closePopover(); res(null); };
   });
 }
+// Hinweis nach endgültigem Löschen: liegen die Dateien noch in der S3-Sicherung? (backup.on_purge)
+function backupNote(r) {
+  const b = (r && r.backup) || {};
+  if (b.only_backup) return ` · ${b.only_backup.toLocaleString("de-DE")} davon liegen weiterhin in der S3-Sicherung`;
+  if (b.mirrored) return ` · auch in der S3-Sicherung gelöscht (${b.mirrored.toLocaleString("de-DE")})`;
+  return "";
+}
 function confirmBox(text) {
   return new Promise(res => {
     const p = modal(`<div>${esc(text)}</div>
@@ -1408,19 +1497,54 @@ function toastAction(msg, label, fn) {
 function reportErrors(r) {
   if (r.errors && r.errors.length) toast(`${r.errors.length} Datei(en) nicht möglich, z. B. ${r.errors[0]}`, 9000);
 }
+// Papierkorb-Aktionen mit vielen Dateien laufen auf dem Server im Hintergrund ({job: true}):
+// Fortschrittskarte mit Restzeit zeigen, auf das Ergebnis warten und es zurückgeben wie eine normale Antwort.
+async function apiOp(path, body) {
+  const r = await api(path, body);
+  if (!r || !r.job) return r;
+  const res = await opWait();
+  if (res.error) throw new Error(res.error);
+  return Object.assign({}, r, res);
+}
+function opWait() {
+  let start = null;
+  return new Promise(resolve => {
+    const tick = async () => {
+      const s = await api("/api/ops/status").catch(() => null);
+      const el = $("#opbar");
+      if (s && s.running) {
+        if (!start) start = { t: Date.now(), done: s.done };
+        const pct = s.total ? Math.min(100, 100 * s.done / s.total) : 0;
+        const rate = (s.done - start.done) / Math.max(0.001, (Date.now() - start.t) / 1000);
+        const eta = rate > 0 && s.done - start.done >= 5 ? (s.total - s.done) / rate : null;
+        const num = n => (n || 0).toLocaleString("de-DE");
+        el.hidden = false;
+        el.innerHTML = `<div class="jb-head"><b>${esc(s.title)}</b><span class="muted">${Math.floor(pct)} %</span></div>
+          <div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>
+          <div class="muted">${num(s.done)} von ${num(s.total)} Dateien${eta != null ? " · noch ca. " + fmtEta(eta) : ""} – du kannst weiterarbeiten</div>`;
+        setTimeout(tick, 600);
+      } else {
+        el.hidden = true;
+        resolve((s && s.result) || {});
+      }
+    };
+    tick();
+  });
+}
+
 // Fotos/Videos in den Papierkorb (Dateien werden auf der Platte nur verschoben)
 async function trashItems(ids, ask = true) {
   const n = ids.length;
   if (ask && !await confirmBox(`${n === 1 ? "Dieses Element" : n.toLocaleString("de-DE") + " Fotos/Videos"} in den Papierkorb legen? ` +
     "Die Dateien wandern auf der Platte in den Ordner „FotoArchiv-Papierkorb“ und lassen sich wiederherstellen, bis du den Papierkorb leerst. " +
     "Ausgeblendete Duplikate und RAW-Partner kommen mit.")) return null;
-  const r = await api("/api/items/delete", { ids });
+  const r = await apiOp("/api/items/delete", { ids });
   reportErrors(r);
   loadYears().catch(() => {});
   return r;
 }
 async function undoTrash(r, after) {
-  const u = await api("/api/trash/restore", { ids: r.ids });
+  const u = await apiOp("/api/trash/restore", { ids: r.ids });
   reportErrors(u);
   toast(`${u.count.toLocaleString("de-DE")} wiederhergestellt`);
   loadYears().catch(() => {});
@@ -1447,6 +1571,27 @@ function openViewer(ids, i) {
   $(".v-faces", viewer.el).classList.toggle("on", viewer.showFaces);
   showItem();
 }
+// Belichtungsreihe: alle Belichtungen unten im Betrachter, Klick zeigt sie (an derselben Stelle der Blätter-Liste)
+const fmtEv = ev => ev == null ? "?" : ev === 0 ? "±0" : (ev > 0 ? "+" : "−") + Math.abs(ev).toLocaleString("de-DE", { maximumFractionDigits: 2 });
+function renderStackStrip(it) {
+  let el = $(".v-stack", viewer.el);
+  if (!el) {
+    el = document.createElement("div");
+    el.className = "v-stack";
+    viewer.el.appendChild(el);
+  }
+  const m = it && !it.locked && it.stack && it.stack.length > 1 ? it.stack : null;
+  el.hidden = !m;
+  if (!m) return;
+  el.innerHTML = `<span class="lbl">Belichtungsreihe</span>` + m.map(x => `<button class="${x.id === it.id ? "on" : ""}" data-sid="${x.id}"
+    title="${esc(x.name)}${x.top ? " (Titelbild)" : ""}"><img src="/thumb/${x.id}" alt=""><span>${fmtEv(x.ev)} EV${x.top ? " ★" : ""}</span></button>`).join("");
+  $$("[data-sid]", el).forEach(b => b.onclick = () => {
+    if (+b.dataset.sid === viewer.ids[viewer.i]) return;
+    viewer.ids = viewer.ids.slice();
+    viewer.ids[viewer.i] = +b.dataset.sid;
+    showItem();
+  });
+}
 function closeViewer() {
   if (viewer.tvFollow) stopTvFollow(false);
   viewer.el.hidden = true;
@@ -1463,7 +1608,7 @@ async function viewerDelete() {
   const it = viewer.item;
   if (!it || it.locked) return;
   if (it.hidden === 2) {
-    const r = await api("/api/trash/restore", { ids: [it.id] });
+    const r = await apiOp("/api/trash/restore", { ids: [it.id] });
     reportErrors(r);
     if (!r.count) return;
     toast("Wiederhergestellt");
@@ -1494,6 +1639,7 @@ async function showItem() {
     return;
   }
   $(".v-title", viewer.el).textContent = `${fmtDate(it.taken)} · ${it.name}` + (viewer.ids.length > 1 ? ` · ${viewer.i + 1}/${viewer.ids.length}` : "");
+  renderStackStrip(it);
   $(".v-fav", viewer.el).textContent = it.fav ? "★" : "☆";
   $(".v-fav", viewer.el).classList.toggle("on", !!it.fav);
   $(".v-edit", viewer.el).hidden = it.kind === "video";
@@ -1632,6 +1778,9 @@ function renderPanel() {
       <dt>Alben</dt><dd>${it.albums.map(a => `<span class="tag"><a href="#/album/${a.id}" onclick="closeViewer()">${esc(a.name)}</a><span class="x" data-ralbum="${a.id}" title="Aus Album entfernen">✕</span></span>`).join("")}<button class="addbtn" id="vp-album">+ Album</button></dd>
       <dt>Stichwörter</dt><dd>${(it.usertags || "").split(", ").filter(Boolean).map(t => `<span class="tag">${esc(t)}<span class="x" data-rtag="${esc(t)}" title="Entfernen">✕</span></span>`).join("")}<button class="addbtn" id="vp-tag">+ Stichwort</button></dd>
       <dt>Datei</dt><dd><a href="#/ordner/${encodeURIComponent(it.folder)}" onclick="closeViewer()">${esc(it.folder)}</a>/${esc(it.name)}</dd>
+      ${it.stack && it.stack.length ? `<dt>Belichtungsreihe</dt><dd>${it.stack.length} Fotos (${it.stack.map(m => fmtEv(m.ev)).join(" / ")} EV)
+        <div class="v-acts" style="margin-top:6px">${it.stack.find(m => m.top && m.id === it.id) ? "" : '<button id="vp-stacktop">Als Titelbild der Reihe</button>'}
+        <button id="vp-unstack" title="Alle Fotos der Reihe einzeln zeigen; die Erkennung fasst sie nicht wieder zusammen">Reihe auflösen</button></div></dd>` : ""}
       ${it.copies.length ? `<dt>Kopien</dt><dd>${it.copies.map(esc).join("<br>")}</dd>` : ""}
       ${it.error ? `<dt>Fehler</dt><dd>${esc(it.error)}</dd>` : ""}
     </dl>
@@ -1661,6 +1810,10 @@ function bindPanel(panel, it) {
     after(it.hidden ? "Wieder eingeblendet" : "Ausgeblendet – zu finden unter Alben › Ausgeblendete Fotos");
   };
   $("#vp-del", panel).onclick = () => viewerDelete();
+  const st = $("#vp-stacktop", panel);
+  if (st) st.onclick = async () => { await api(`/api/item/${it.id}/stacktop`, {}); viewer.dirty = true; after("Ist jetzt das Titelbild der Reihe"); };
+  const us = $("#vp-unstack", panel);
+  if (us) us.onclick = async () => { await api(`/api/item/${it.id}/unstack`, {}); viewer.dirty = true; after("Reihe aufgelöst – alle Fotos werden einzeln gezeigt"); };
   const vpe = $("#vp-edit", panel);
   if (vpe) vpe.onclick = () => openEditor();
   $("#vp-priv", panel).onclick = async () => {
@@ -1680,6 +1833,9 @@ function updateSelbar(grid) {
   selbar.hidden = !selGrid;
   if (!selGrid) return;
   $(".sb-count", selbar).textContent = `${selGrid.sel.size.toLocaleString("de-DE")} ausgewählt`;
+  const dtab = selGrid.context && selGrid.context.docs;  // Dokumente: Entscheidungs-Knöpfe
+  $$(".docbtn", selbar).forEach(b => (b.hidden = !dtab || (b.dataset.act === "docsort" && dtab !== "vorschlag")
+    || (b.dataset.act === "dockeep" && dtab === "behalten")));
 }
 $(".sb-close", selbar).onclick = () => selGrid && selGrid.clearSel();
 $(".sb-all", selbar).onclick = () => selGrid && selGrid.selectAll();
@@ -1704,15 +1860,15 @@ async function runAction(act, ev) {
     return;
   }
   if (act === "restore") {
-    const r = await api("/api/trash/restore", { ids });
+    const r = await apiOp("/api/trash/restore", { ids });
     done(`${r.count.toLocaleString("de-DE")} wiederhergestellt`, true);
     reportErrors(r);
     return loadYears().catch(() => {});
   }
   if (act === "purge") {
     if (!await confirmBox(`${n.toLocaleString("de-DE")} Dateien endgültig von der Platte löschen? Das lässt sich nicht rückgängig machen.`)) return;
-    const r = await api("/api/trash/purge", { ids });
-    done(`${r.count.toLocaleString("de-DE")} endgültig gelöscht`, true);
+    const r = await apiOp("/api/trash/purge", { ids });
+    done(`${r.count.toLocaleString("de-DE")} endgültig gelöscht` + backupNote(r), true);
     return reportErrors(r);
   }
   if (act === "video") {
@@ -1721,6 +1877,16 @@ async function runAction(act, ev) {
     done("", false);
     toastAction(`${n} in „${r.name}“ übernommen`, "Öffnen", () => { location.hash = "#/video/" + r.id; });
     return;
+  }
+  if (act === "dockeep") {
+    await api("/api/docs/keep", { ids });
+    return done(`${n} Dokument${n === 1 ? "" : "e"} behalten (Album „Dokumente“)`, true);
+  }
+  if (act === "docno") { await api("/api/docs/not", { ids }); return done(`${n} zurück in die Zeitleiste – werden nicht mehr einsortiert`, true); }
+  if (act === "docsort") {
+    const r = await api("/api/docs/sort", { ids });
+    loadYears().catch(() => {});
+    return done(`${r.count} aus der Zeitleiste einsortiert`, true);
   }
   if (act === "show") return slideshowDialog(ids, `${n} Fotos`);
   if (act === "share") return shareDialog(ids, g.context.albumName || "");
@@ -1764,6 +1930,7 @@ async function runAction(act, ev) {
       closePopover();
       const m = d.dataset.m;
       if (m === "del" || m === "restore" || m === "purge") return runAction(m);
+      if (m === "nodoc") { await api("/api/docs/not", { ids }); return done(`${n} aus der Dokumentenliste genommen`, true); }
       if (m === "unfav") { await api("/api/items/fav", { ids, fav: false }); done(`Favorit bei ${n} Fotos entfernt`, ctx.fav); }
       else if (m === "rotr" || m === "rotl") {
         toast(`${n} Fotos werden gedreht …`, 6000);
@@ -1849,7 +2016,7 @@ async function slideshowDialog(ids, title) {
     const r = await api("/api/slideshow/video", { ids: o.ids, seconds: o.seconds, kenburns: o.kb, music: o.tracks.map(t => t.path), name: title, tv });
     if (r.error) return toast(r.error);
     toast("Video wird erstellt …", 4000);
-    pollShare();
+    pollShare(true);
   };
 }
 
@@ -1981,7 +2148,7 @@ async function shareDialog(ids, name) {
   const mac = st.platform === "darwin";
   const p = modal(`<div class="dlg"><b>${ids.length.toLocaleString("de-DE")} Fotos teilen</b>
     <div class="targets"><button id="tph"><span>📱</span>Aufs Handy</button><button id="tfr"><span>🖼</span>Frame-Kunstmodus</button>
-      <button id="ttv"><span>📺</span>Auf dem Fernseher</button></div>
+      <button id="ttv"><span>📺</span>Auf dem Fernseher</button>${state.hasS3 ? '<button id="tweb"><span>🌐</span>Als Webseite (S3)</button>' : ""}</div>
     <b style="display:block;margin-top:10px">… oder als Dateien exportieren</b>
     <div class="form">
       <label>Format</label><select id="xf">
@@ -1999,6 +2166,7 @@ async function shareDialog(ids, name) {
   $("#tph", p).onclick = () => phoneDialog(ids);
   $("#tfr", p).onclick = () => frameDialog(ids);
   $("#ttv", p).onclick = () => tvDialog(ids, name || `${ids.length} Fotos`);
+  if ($("#tweb", p)) $("#tweb", p).onclick = () => webDialog({ ids }, name || `${ids.length.toLocaleString("de-DE")} Fotos`);
   $("#xgo", p).onclick = async () => {
     const body = { ids, size: $("#xf", p).value, zip: $("#xz", p).checked, name: $("#xn", p).value.trim(), apple: mac && $("#xa", p).checked };
     closePopover();
@@ -2006,7 +2174,7 @@ async function shareDialog(ids, name) {
     if (r.error) return toast(r.error);
     toast("Export läuft …", 3000);
     if (selGrid) selGrid.clearSel();
-    pollShare();
+    pollShare(true);
   };
 }
 // Mitlauf-Modus: aktuelles Foto des Betrachters an den Fernseher (kurz entprellt beim schnellen Blättern)
@@ -2235,19 +2403,34 @@ async function bindTvSettings(page) {
   show();
 }
 
-let shareTimer = null;
-async function pollShare() {
+// Export / Diashow-Video: eigene Fortschrittskarte (unten links) – das Statusfeld oben gehört der Bibliothek
+let shareTimer = null, shareStart = null;
+async function pollShare(first) {
   clearTimeout(shareTimer);
-  const s = await api("/api/share/status");
-  const el = $("#indexstatus");
-  if (s.running) {
+  const s = await api("/api/share/status").catch(() => null);
+  const el = $("#jobbar");
+  if (s && s.running) {
+    if (first || !shareStart) shareStart = { t: Date.now(), done: s.done };
+    const pct = s.total ? Math.min(100, 100 * s.done / s.total) : 0;
+    const secs = (Date.now() - shareStart.t) / 1000, rate = (s.done - shareStart.done) / Math.max(secs, 0.001);
+    const eta = rate > 0 && s.total && s.done - shareStart.done >= 3 ? (s.total - s.done) / rate : null;
+    const num = n => (n || 0).toLocaleString("de-DE");
     el.hidden = false;
-    const pct = s.total ? Math.round(100 * s.done / s.total) : 0;
-    el.innerHTML = `${esc(s.title)} ${pct}%<div class="bar"><i style="width:${pct}%"></i></div>`;
+    el.innerHTML = `<div class="jb-head"><b>${esc(s.title)}</b><button class="ghost" id="jbstop">Abbrechen</button></div>
+      <div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>
+      <div class="muted">${s.phase ? esc(s.phase) + " · " : ""}${num(s.done)} von ${num(s.total)} · ${Math.floor(pct)} %${s.bytes ? " · " + fmtSize(s.bytes) : ""}${
+        eta != null ? " · noch ca. " + fmtEta(eta) : ""}${s.errors ? ` · ${num(s.errors)} Fehler` : ""}</div>`;
+    $("#jbstop", el).onclick = async () => { await api("/api/share/stop", {}); toast("Wird abgebrochen …"); };
     shareTimer = setTimeout(pollShare, 1000);
   } else {
-    toast(s.message || "Fertig", 8000);
-    pollStatus();
+    if (s && /^https?:/.test(s.result || "") && (!el.hidden || first)) {  // Webseite auf S3 fertig
+      const url = s.result;
+      toastAction(s.message || "Webseite fertig", "Link kopieren", async () => {
+        try { await navigator.clipboard.writeText(url); toast("Link kopiert"); } catch { prompt("Link:", url); }
+      });
+    } else if (!el.hidden || first) toast((s && s.message) || "Fertig", 8000);
+    el.hidden = true;
+    shareStart = null;
   }
 }
 
@@ -2602,12 +2785,24 @@ search.addEventListener("keydown", e => {
 search.addEventListener("blur", () => setTimeout(() => (sugg.hidden = true), 150));
 search.addEventListener("focus", updateSuggest);
 
+// Suche und Filter gelten im aktuellen Album/Ereignis/Ordner (state.scope), sonst in allen Fotos
+const SEARCH_PLACEHOLDER = "Suchen: Ort, Ordner, Jahr, Monat, Kamera, Stichwort …";
+function setSearchScope(label) {
+  state.scope = label || null;
+  search.placeholder = label ? `Suchen in ${label} …` : SEARCH_PLACEHOLDER;
+  const sc = $("#scope");
+  sc.hidden = !label;
+  if (label) {
+    sc.innerHTML = `nur in: ${esc(label)} <button title="In allen Fotos suchen">✕</button>`;
+    $("button", sc).onclick = () => { state.scope = null; location.hash = "#/fotos"; };
+  }
+}
 function runSearch() {
   state.filters.q = search.value.trim();
   const page = location.hash.split("?")[0];
   if (page === "#/fotos") routes.fotos();
   else if (page === "#/karte") routes.karte();
-  else if (page === "#/favoriten") routes.favoriten();
+  else if (state.scope) route();  // im Album/Ereignis/Ordner bleiben
   else location.hash = "#/fotos";
 }
 
@@ -2624,11 +2819,12 @@ bindFilter("#f-kind", "kind");
 bindFilter("#f-fav", "fav", "checked");
 bindFilter("#f-nodate", "nodate", "checked");
 bindFilter("#f-dups", "dups", "checked");
+bindFilter("#f-stacks", "stacks");
 bindFilter("#f-sort", "sort");
 $("#f-reset").onclick = () => {
-  Object.assign(state.filters, { from: "", to: "", kind: "", camera: "", fav: false, nodate: false, dups: false, sort: "desc" });
+  Object.assign(state.filters, { from: "", to: "", kind: "", camera: "", fav: false, nodate: false, dups: false, stacks: "", sort: "desc" });
   state.cameraLabel = "";
-  ["#f-from", "#f-to", "#f-kind"].forEach(s => ($(s).value = ""));
+  ["#f-from", "#f-to", "#f-kind", "#f-stacks"].forEach(s => ($(s).value = ""));
   ["#f-fav", "#f-nodate", "#f-dups"].forEach(s => ($(s).checked = false));
   $("#f-sort").value = "desc";
   markFilterBtn();
@@ -2670,7 +2866,7 @@ $$("#kindsw [data-kind]").forEach(b => b.onclick = () => {
 function markFilterBtn() {
   const f = state.filters;
   $$("#kindsw [data-kind]").forEach(b => b.classList.toggle("on", b.dataset.kind === (f.kind === "raw" ? "photo" : f.kind || "")));
-  const n = [f.from, f.to, f.kind, f.fav, f.nodate, f.dups, f.sort !== "desc"].filter(Boolean).length;
+  const n = [f.from, f.to, f.kind, f.fav, f.nodate, f.dups, f.stacks, f.sort !== "desc"].filter(Boolean).length;
   const cb = $("#camsw");
   cb.innerHTML = f.camera ? `📷 ${esc(state.cameraLabel || "Kamera")} <span class="x" title="Kamerafilter aufheben">✕</span>` : "📷 Kamera ▾";
   cb.classList.toggle("on", !!f.camera);
@@ -2744,6 +2940,7 @@ async function route() {
     (a.dataset.nav === "alben" && (page === "album" || page === "ereignis" || page === "ausgeblendet"))));
   document.body.classList.toggle("trashview", page === "papierkorb");
   const fn = routes[page] || routes.fotos;
+  setSearchScope(null);  // die Seite setzt ihren Bereich selbst (Album, Ereignis, Ordner …)
   if (page !== "start") await personsReady;  // andere Seiten brauchen die Personenliste
   try {
     await fn(...(page === "ordner" ? [rest.join("/")] : rest));
@@ -2760,8 +2957,12 @@ const personsReady = loadPersons().catch(() => []);
   const fresh = !location.hash || location.hash === "#/";
   if (fresh) history.replaceState(null, "", "#/start");
   loadYears().catch(() => {});
-  route();
+  await api("/api/backup").then(c => { state.hasS3 = c.targets.length > 0; }).catch(() => {});  // vor dem ersten Routen
+  // erst nach video.js/backup.js routen – sonst kennt der direkte Aufruf von #/video oder #/sicherung die Seite noch nicht
+  if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", route, { once: true }); else route();
   const s = await pollStatus();
   pollTv();
+  api("/api/share/status").then(st => { if (st.running) pollShare(true); }).catch(() => {});
+  api("/api/ops/status").then(st => { if (st.running) opWait().then(r => { toast((r && r.error) || "Fertig"); route(); }); }).catch(() => {});
   if (s && !s.items && fresh) location.hash = "#/einstellungen";
 })();

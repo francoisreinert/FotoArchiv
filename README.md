@@ -11,10 +11,16 @@ direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Foto
 - **Fotobearbeitung** (zuschneiden, begradigen, Licht, Farbe, Tiefen/Lichter – Original bleibt unverändert)
 - **Videoschnitt** mit Zeitleiste, Übergängen, Originalton und Musik; Rendern auf allen Prozessorkernen
 - **Gesichtserkennung** auf dem eigenen Computer: Gesichter werden gruppiert, einmal benennen genügt
-- Alben, Ereignisse, private (passwortgeschützte) Fotos
-- **Duplikate** finden und aufräumen, Papierkorb zum Wiederherstellen
+- Alben, Ereignisse, private (passwortgeschützte) Fotos; Suche und Filter auch nur innerhalb eines Albums/Ereignisses
+- **Duplikate** finden und aufräumen, Papierkorb zum Wiederherstellen (große Mengen mit Fortschritt im Hintergrund)
+- **Belichtungsreihen** (Bracketing) erkennen und als Stapel zeigen – nie als Duplikat behandelt
+- **Dokumente aussortieren**: Fotos von Briefen, Rechnungen, Bildschirmfotos werden erkannt (auch nach jedem Import)
+  und aus der Zeitleiste genommen; behalten, löschen oder zurück – endgültig Gelöschtes holt kein Import wieder
+- **Sicherung auf S3** (Amazon S3 oder eigener S3-Speicher wie StorageGRID/MinIO): im Hintergrund, nur Neues,
+  große Dateien in Teilen, fortsetzbar, mit Wiederherstellen; Alben/Ereignisse als **Webseite** im Bucket teilen
 - Import aus iCloud, Google Takeout, Ordnern, ZIP-Dateien
 - Diashow (auch als Video), Teilen, aufs Handy per QR-Code, Samsung-Fernseher / The Frame
+- Ordner für die **Amazon-Photos-App** füllen (Album, Favoriten)
 - Übernahme aus Mylio (optional)
 
 ## So sieht es aus
@@ -68,5 +74,5 @@ bitte wie bei jeder Software regelmäßig Sicherungen anlegen.
 Mitgelieferte fremde Bestandteile stehen unter ihren eigenen Lizenzen: Übersicht in
 [DRITTANBIETER.md](DRITTANBIETER.md), vollständige Texte im Ordner [Lizenzen](Lizenzen).
 Ortsdaten © [GeoNames](https://www.geonames.org) (CC BY 4.0), Kartenbilder © OpenStreetMap-Mitwirkende.
-Apple, iCloud, Google, Samsung, The Frame und Mylio sind Marken ihrer Inhaber; FotoArchiv ist mit keinem
+Apple, iCloud, Google, Samsung, The Frame, Amazon, Amazon S3, NetApp StorageGRID und Mylio sind Marken ihrer Inhaber; FotoArchiv ist mit keinem
 dieser Unternehmen verbunden.

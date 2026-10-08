@@ -176,6 +176,8 @@ def export(ids, size="small", as_zip=False, name=None, dest=None, apple_photos=F
             JOB.phase = "In Apple Fotos übernehmen"
             _to_apple_photos(written, name)
             JOB.message = "%d Fotos als Album „%s“ in Apple Fotos übernommen" % (len(written), name)
+        elif JOB.stop:
+            JOB.message = "Abgebrochen – %d von %d Dateien exportiert nach %s" % (JOB.new, JOB.total, result)
         else:
             JOB.message = "%d Dateien exportiert nach %s" % (JOB.new, result)
             reveal(os.path.dirname(result) if zf else result)
