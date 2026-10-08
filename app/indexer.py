@@ -705,6 +705,9 @@ def run(full_faces=False):
 
         PROGRESS.set_phase("Belichtungsreihen suchen")
         stacks.detect(con)
+        import panos
+
+        panos.detect(con)  # 360°-Fotos unter den neuen
         mark_duplicates(con)
         import faces
 

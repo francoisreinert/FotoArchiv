@@ -96,6 +96,7 @@ class VGrid {
     this.ids = result.ids;
     this.groups = result.groups;
     this.videos = new Set(result.videos);
+    this.panos = new Set(result.panos || []);  // 360°-Fotos (Kennzeichen „360°“)
     this.stacks = new Map(result.stacks || []);  // Index → Anzahl Fotos der Belichtungsreihe (Titelbild)
     this.lockedSet = new Set(result.locked || []);
     window.lockedIds = new Set((result.locked || []).map(i => result.ids[i]));
@@ -228,6 +229,7 @@ class VGrid {
           d.style.cssText = `top:${row.y}px;left:${(i - row.start) * this.size}px;width:${this.size}px;height:${this.size}px`;
           d.innerHTML = this.lockedSet.has(i) ? `<div class="lockcell" title="Privat – zum Entsperren klicken">🔒</div><span class="chk"></span>`
             : `<img decoding="async" src="${thumbUrl(this.ids[i])}" alt=""><span class="chk"></span>` + (this.videos.has(i) ? '<span class="vid">▶</span>' : "")
+              + (this.panos.has(i) ? '<span class="pano360" title="360°-Foto">360°</span>' : "")
               + (this.stacks.has(i) ? `<span class="stk" title="Belichtungsreihe mit ${this.stacks.get(i)} Fotos – im Betrachter unten alle Belichtungen">❐ ${this.stacks.get(i)}</span>` : "")
               + `<span class="vadd" title="Zum Videoprojekt hinzufügen (Shift+Klick: anderes Projekt)">🎬+</span>`;
           els.push(d);
@@ -1676,6 +1678,8 @@ async function showItem() {
     } else {
       prepare();
     }
+  } else if (it.pano && !viewer.flat && window.WebGLRenderingContext) {
+    showPano(it, media);
   } else {
     const src = it.browser_ok ? `/original/${id}` : `/preview/${id}` + (thumbVer[id] ? `?v=${thumbVer[id]}` : "");
     media.innerHTML = `<div class="wrap"><img src="${thumbUrl(id)}" alt="" class="lo"></div>`;
@@ -1690,12 +1694,30 @@ async function showItem() {
     img.src = src;
     const lo = $("img.lo", media);
     lo.style.cssText = "width:min(100vw,calc((100vh - 48px) * " + ((it.width || 4) / (it.height || 3)) + "));filter:blur(0px)";
+    if (it.pano) media.insertAdjacentHTML("beforeend", `<button class="pano-sw" title="Als 360°-Panorama ansehen">🌐 360° ansehen</button>`);
   }
+  const psw = $(".pano-sw", media);
+  if (psw) psw.onclick = e => { e.stopPropagation(); viewer.flat = !viewer.flat; showItem(); };
   renderPanel();
   // Nachbarn vorladen
   for (const k of [viewer.i + 1, viewer.i - 1]) {
     const nid = viewer.ids[k];
     if (nid) new Image().src = `/thumb/${nid}`;
+  }
+}
+// 360°-Foto (panos.py / pano.js): Kugelansicht, unten Umschalter auf das flache Bild
+function showPano(it, media) {
+  media.innerHTML = `<div class="panowrap"><img src="${thumbUrl(it.id)}" alt="" class="lo pano-lo">
+    <div class="pano-hint">360° – ziehen zum Umsehen, Mausrad zum Zoomen, Doppelklick setzt zurück</div>
+    <button class="pano-sw" title="Das ganze Bild flach zeigen">▭ Flach zeigen</button></div>`;
+  const wrap = $(".panowrap", media);
+  try {
+    const pv = new PanoViewer(wrap, `/pano/${it.id}`, it.pano);
+    pv.onload = () => { const lo = $(".pano-lo", wrap); if (lo) lo.remove(); setTimeout(() => { const h = $(".pano-hint", wrap); if (h) h.classList.add("fade"); }, 3500); };
+    pv.onerror = () => { viewer.flat = true; showItem(); };
+  } catch (err) {  // kein WebGL: flach zeigen
+    viewer.flat = true;
+    showItem();
   }
 }
 function drawFaces() {

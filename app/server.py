@@ -161,7 +161,9 @@ def build_where(p):
             where.append("i.camera IN (%s)" % ",".join("?" * len(raws)) if raws else "0")
             args += raws
     kind = p.get("kind")
-    if kind == "photo":
+    if kind == "pano":  # 360°-Fotos (panos.py)
+        where.append("i.id IN (SELECT id FROM items WHERE pano <> '')")
+    elif kind == "photo":
         where.append("i.kind IN ('photo','raw')")
     elif kind in ("video", "raw"):
         where.append("i.kind = ?")
@@ -243,6 +245,8 @@ def query_items(p):
 
     sz = stacks.sizes(db())  # Belichtungsreihen: Stapel-Kennzeichen am Titelbild
     out["stacks"] = [[k, sz[iid]] for k, iid in enumerate(ids) if iid in sz] if sz else []
+    pano = {r[0] for r in db().execute("SELECT id FROM items WHERE pano <> ''")}  # 360°-Kennzeichen (Teilindex)
+    out["panos"] = [k for k, iid in enumerate(ids) if iid in pano] if pano else []
     # gesperrt: Platzhalter statt Vorschau; entsperrt: Liste nur fürs Nicht-Zwischenspeichern
     out["locked" if p.get("_locked") else "private"] = private
     return out
@@ -629,7 +633,7 @@ def r_item(h, p, iid):
     c = db()
     cols = ["id", "path", "folder", "name", "ext", "kind", "size", "taken", "taken_src", "width", "height", "duration",
             "lat", "lon", "place", "camera", "rating", "fav", "keywords", "caption", "dup_of", "raw_of", "error",
-            "hidden", "usertags", "userrot", "trashed", "trash_from", "edit"]
+            "hidden", "usertags", "userrot", "trashed", "trash_from", "edit", "pano"]
     row = c.execute("SELECT %s FROM items WHERE id=?" % ",".join(cols), (int(iid),)).fetchone()
     if not row:
         return h.send_error(404)
@@ -649,6 +653,7 @@ def r_item(h, p, iid):
     d["browser_ok"] = (d["ext"] in common.BROWSER_IMAGE_EXT and (d["size"] or 0) < 40_000_000 and not rotfix
                        and not d["edit"])
     d["edit"] = json.loads(d["edit"]) if d["edit"] else None
+    d["pano"] = json.loads(d["pano"]) if d["pano"] else None
     import stacks
 
     d["stack"] = stacks.members(c, iid)
@@ -752,6 +757,40 @@ def r_original(h, p, iid):
     if is_blocked(h, iid):
         return h.send_error(403)
     h.send_file(to_abs(row[0]), VIDEO_TYPES.get(row[1]))
+
+
+def r_pano(h, p, iid):
+    """Bild für den 360°-Betrachter: JPEG-Original direkt, andere Formate (HEIC …) als JPEG, höchstens 8192 px breit."""
+    import io
+
+    import media
+
+    row = db().execute("SELECT path, ext, kind FROM items WHERE id=?", (int(iid),)).fetchone()
+    if not row:
+        return h.send_error(404)
+    if is_blocked(h, iid):
+        return h.send_error(403)
+    path = to_abs(row[0])
+    if row[1] in ("jpg", "jpeg") and os.path.getsize(path) < 60_000_000:
+        return h.send_file(path, "image/jpeg")
+    im = media.open_image(path, row[2], max_side=8192)[0].convert("RGB")
+    im.thumbnail((8192, 8192))
+    buf = io.BytesIO()
+    im.save(buf, "JPEG", quality=90)
+    h.send_bytes(buf.getvalue(), "image/jpeg")
+
+
+def r_panos_scan(h, p):
+    """360°-Fotos suchen (alle Kandidaten neu, wenn recheck)."""
+    import panos
+
+    con = connect()
+    try:
+        n = panos.detect(con, bool(h.body().get("recheck")))
+        total = con.execute("SELECT COUNT(*) FROM items WHERE pano <> '' AND COALESCE(hidden,0) != 2").fetchone()[0]
+    finally:
+        con.close()
+    h.send_json({"ok": True, "found": n, "total": total})
 
 
 def r_open(h, p, iid, mode):
@@ -2712,6 +2751,8 @@ ROUTES = [
     ("GET", r"/thumb/(\d+)", r_thumb),
     ("GET", r"/preview/(\d+)", r_preview),
     ("GET", r"/original/(\d+)", r_original),
+    ("GET", r"/pano/(\d+)", r_pano),
+    ("POST", r"/api/panos/scan", r_panos_scan),
     ("GET", r"/face/(\d+)", r_face_img),
     ("GET", r"/api/folders", r_folders),
     ("GET", r"/api/persons", r_persons),

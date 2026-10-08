@@ -13,6 +13,7 @@ direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Foto
 - **Gesichtserkennung** auf dem eigenen Computer: Gesichter werden gruppiert, einmal benennen genügt
 - Alben, Ereignisse, private (passwortgeschützte) Fotos; Suche und Filter auch nur innerhalb eines Albums/Ereignisses
 - **Duplikate** finden und aufräumen, Papierkorb zum Wiederherstellen (große Mengen mit Fortschritt im Hintergrund)
+- **360°-Fotos** (GoPro Fusion, Theta, Insta360, Photo Sphere) rundum ansehen – direkt im Browser
 - **Belichtungsreihen** (Bracketing) erkennen und als Stapel zeigen – nie als Duplikat behandelt
 - **Dokumente aussortieren**: Fotos von Briefen, Rechnungen, Bildschirmfotos werden erkannt (auch nach jedem Import)
   und aus der Zeitleiste genommen; behalten, löschen oder zurück – endgültig Gelöschtes holt kein Import wieder

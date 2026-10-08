@@ -321,7 +321,7 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
                          ("trashed", "TEXT"), ("trash_from", "TEXT"), ("trash_side", "TEXT"),
                          ("edit", "TEXT"), ("doc_lines", "INTEGER"), ("doc_area", "REAL"), ("doc_no", "INTEGER DEFAULT 0"),
                          ("ev_bias", "REAL"), ("exp_mode", "INTEGER"), ("stack", "INTEGER"), ("stack_top", "INTEGER"),
-                         ("doc_state", "INTEGER")):
+                         ("doc_state", "INTEGER"), ("pano", "TEXT")):
             if col not in cols:
                 con.execute("ALTER TABLE items ADD COLUMN %s %s" % (col, typ))
         # Abdeckende Indizes: Übersicht, Kalender und Ordner lesen nur den Index statt jede Zeile
@@ -334,6 +334,7 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
             con.execute("DROP INDEX IF EXISTS " + old)
         con.execute("CREATE INDEX IF NOT EXISTS items_doc ON items(doc_lines)")  # Dokumente finden (docs.py)
         con.execute("CREATE INDEX IF NOT EXISTS items_stack ON items(stack) WHERE stack IS NOT NULL")  # Belichtungsreihen
+        con.execute("CREATE INDEX IF NOT EXISTS items_pano ON items(id) WHERE pano <> ''")  # 360°-Fotos (panos.py)
         con.execute("CREATE INDEX IF NOT EXISTS faces_cov_person2 ON faces(person_id, item_id, source, x, px, score)")
         con.execute("CREATE INDEX IF NOT EXISTS faces_cov_sugg ON faces(sugg_person, person_id, item_id)")
         acols = {r[1] for r in con.execute("PRAGMA table_info(albums)")}
