@@ -35,6 +35,9 @@ def db():
 
 # ---------------------------------------------------------------- Filter ----
 
+PANO_WORDS = {"360", "rundum", "rundumfoto", "rundumfotos", "photosphere", "kugelpanorama", "sphäre"}
+
+
 def fts_query(text):
     toks = re.findall(r"[\w\-]+", text or "", re.UNICODE)
     return " ".join('"%s"*' % t.replace('"', "") for t in toks if t)
@@ -127,6 +130,12 @@ def build_where(p):
     if cfg.get("hide_raw_with_jpeg", True) and p.get("dups") != "1":
         where.append("i.raw_of IS NULL")
     q = (p.get("q") or "").strip()
+    # Suchwörter "360", "360°", "rundum" … = nur 360°-Fotos (panos.py); der Rest sucht wie gewohnt im Text
+    words = q.split()
+    rest = [w for w in words if w.lower().strip("°") not in PANO_WORDS]
+    if len(rest) != len(words):
+        where.append("i.id IN (SELECT id FROM items WHERE pano <> '')")
+        q = " ".join(rest)
     if q:
         fq = fts_query(q)
         if fq:
@@ -778,6 +787,10 @@ def r_pano(h, p, iid):
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=90)
     h.send_bytes(buf.getvalue(), "image/jpeg")
+
+
+def r_panos_count(h, p):
+    h.send_json({"count": db().execute("SELECT COUNT(*) FROM items WHERE pano <> '' AND COALESCE(hidden,0) != 2").fetchone()[0]})
 
 
 def r_panos_scan(h, p):
@@ -2753,6 +2766,7 @@ ROUTES = [
     ("GET", r"/original/(\d+)", r_original),
     ("GET", r"/pano/(\d+)", r_pano),
     ("POST", r"/api/panos/scan", r_panos_scan),
+    ("GET", r"/api/panos/count", r_panos_count),
     ("GET", r"/face/(\d+)", r_face_img),
     ("GET", r"/api/folders", r_folders),
     ("GET", r"/api/persons", r_persons),

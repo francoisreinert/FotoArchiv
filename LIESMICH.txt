@@ -160,7 +160,8 @@ DUPLIKATE
   Rundum-Fotos (GoPro Fusion, Ricoh Theta, Insta360, Google Photo Sphere …) werden am Kennzeichen in der
   Datei erkannt und tragen im Raster "360°". Im Betrachter öffnen sie sich als Kugel: ziehen zum Umsehen,
   Mausrad oder zwei Finger zum Zoomen, Doppelklick setzt zurück; "▭ Flach zeigen" zeigt das ganze Bild.
-  Filter › Art › "nur 360°-Fotos".
+  Nur 360°-Fotos: oben der Umschalter "🌐 360°" oder in der Suche "360" (kombinierbar, z. B. "360 2019",
+  "360 Kroatien"); auch Filter › Art › "nur 360°-Fotos".
 
 BELICHTUNGSREIHEN (BRACKETING)
   Mindestens 3 Fotos derselben Kamera im selben Ordner, höchstens 2 Sekunden auseinander, mit

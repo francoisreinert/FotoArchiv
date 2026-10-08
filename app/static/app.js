@@ -248,6 +248,23 @@ class VGrid {
     const key = Object.keys(this.groupTop).find(k => k.startsWith(prefix));
     if (key !== undefined) main.scrollTop = this.groupTop[key] + this.top() - 4;
   }
+  // Stelle merken: oberstes sichtbares Foto, das von der Aktion nicht betroffen ist (betroffene können verschwinden)
+  place(skip = new Set()) {
+    const st = main.scrollTop, top = this.top();
+    for (const r of this.rows) {
+      if (r.t !== "r" || r.y + top + r.h <= st) continue;
+      for (let i = r.start; i < r.end; i++) if (!skip.has(this.ids[i])) return { id: this.ids[i], i, off: r.y + top - st };
+    }
+    return { id: null, i: this.ids.length - 1, off: 0 };
+  }
+  // nach dem Neuladen genau dorthin – die nächsten Fotos rücken an die Stelle der erledigten
+  restorePlace(p) {
+    if (!p || !this.ids.length) return;
+    let i = p.id != null ? this.ids.indexOf(p.id) : -1;
+    if (i < 0) i = Math.max(0, Math.min(p.i, this.ids.length - 1));
+    const row = this.rows.find(r => r.t === "r" && i >= r.start && i < r.end);
+    if (row) main.scrollTop = Math.max(0, row.y + this.top() - p.off);
+  }
   scrollToIndex(i) {
     const row = this.rows.find(r => r.t === "r" && i >= r.start && i < r.end);
     if (row && (row.y + this.top() < main.scrollTop || row.y + this.top() + row.h > main.scrollTop + main.clientHeight))
@@ -756,7 +773,7 @@ const routes = {
       loadYears().catch(() => {});
       route();
     };
-    if (st.running) setTimeout(() => { if (location.hash.startsWith("#/dokumente") && !(currentGrid && currentGrid.sel.size)) route(); }, 15000);
+    if (st.running) setTimeout(() => { if (location.hash.startsWith("#/dokumente") && !(currentGrid && currentGrid.sel.size)) reloadInPlace(); }, 15000);
   },
   async favoriten() {
     setSearchScope("Favoriten");
@@ -1873,7 +1890,12 @@ async function runAction(act, ev) {
   const g = selGrid;
   if (!g) return;
   const ids = g.selectedIds(), n = ids.length;
-  const done = (msg, reload) => { toast(msg); g.clearSel(); if (reload) route(); };
+  const done = (msg, reload) => {
+    if (msg) toast(msg);
+    const place = reload ? g.place(new Set(ids)) : null;  // Position halten statt an den Anfang zu springen
+    g.clearSel();
+    if (reload) route().then(() => currentGrid && currentGrid.restorePlace(place));
+  };
   if (act === "del") {
     const r = await trashItems(ids);
     if (!r) return;
@@ -2951,6 +2973,11 @@ function loadLeaflet() {
 }
 
 // ---------------------------------------------------------------- Router ----
+// Ansicht neu laden, ohne die Scroll-Position zu verlieren
+function reloadInPlace() {
+  const place = currentGrid ? currentGrid.place() : null;
+  return route().then(() => currentGrid && currentGrid.restorePlace(place));
+}
 async function route() {
   closePopover();
   if (!viewer.el.hidden) closeViewer();
@@ -2980,6 +3007,7 @@ const personsReady = loadPersons().catch(() => []);
   if (fresh) history.replaceState(null, "", "#/start");
   loadYears().catch(() => {});
   await api("/api/backup").then(c => { state.hasS3 = c.targets.length > 0; }).catch(() => {});  // vor dem ersten Routen
+  api("/api/panos/count").then(r => { $('#kindsw [data-kind="pano"]').hidden = !r.count; }).catch(() => {});  // 360°-Umschalter
   // erst nach video.js/backup.js routen – sonst kennt der direkte Aufruf von #/video oder #/sicherung die Seite noch nicht
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", route, { once: true }); else route();
   const s = await pollStatus();
