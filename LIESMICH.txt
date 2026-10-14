@@ -214,6 +214,22 @@ SICHERUNG AUF S3 (Amazon S3 oder eigener S3-Speicher wie StorageGRID, MinIO …)
   in einen anderen Ordner. "Katalog aus der Sicherung …" holt Alben, Personen usw. zurück (der bisherige
   Katalog bleibt als data/catalog-vorher-….db), FotoArchiv startet dann neu.
 
+ARCHIV-ANSICHT IM BUCKET (ohne FotoArchiv ansehen)
+  Sicherung › Haken "Archiv-Ansicht im Bucket pflegen": nach jeder Sicherung legt FotoArchiv unter
+  <Ordner im Bucket>/FotoArchiv-Ansicht/ eine Webseite ab, die aufgebaut ist wie FotoArchiv: Übersicht mit
+  "An diesem Tag", Fotos (Zeitleiste mit Jahresleiste), Kalender, Alben & Ereignisse, Ordner, Personen, Karte
+  und Favoriten; oben Suche (Ort, Ordner, Datei, Kamera, Person, Album, Ereignis, Stichwort) und Filter
+  Alle/Fotos/Videos/360°, Kamera, nur Favoriten. Große Ansicht mit Info (ⓘ), Videos, 360°-Betrachter,
+  "Original". Einmal etwa 2–3 MB laden, danach läuft alles im Browser. Private, ausgeblendete und
+  einsortierte Dokumente kommen nicht hinein. Der Bucket bleibt privat: die Seite fragt einmal nach Zugangs-
+  und geheimem Schlüssel (bleiben nur in diesem Browser). "🌐 Ansicht öffnen" (Link 7 Tage gültig) oder
+  "index.html speichern" (gespeichert geht alles außer dem 360°-Betrachter). Direkter Link auf ein Bild:
+  an die Adresse …#/fotos?bild=<Nummer> anhängen.
+  Private Fotos: solange "Privat" in FotoArchiv entsperrt ist, kommen sie verschlüsselt mit (AES-256, Schlüssel aus
+  dem Privat-Passwort – gespeichert wird es nirgends). In der Ansicht oben "🔒 Privat" + dasselbe Passwort.
+  Änderungen (Stichwörter, Alben, Personen …) zieht FotoArchiv alle 10 Minuten automatisch nach.
+  Absicherung: Sicherung › warnt, wenn der Ordner im Bucket ohne Schlüssel lesbar ist, und sperrt ihn auf Knopfdruck.
+
 ALBUM ALS WEBSEITE (S3)
   Im Album "🌐 Webseite": eine Seite mit allen Fotos/Videos des Albums (private nie) im Bucket unter
   FotoArchiv-Web/. Privater Link, 7 Tage gültig ("Erneuern" unter Sicherung) – oder dauerhaft, wenn der
@@ -239,7 +255,7 @@ FERNSEHER & SAMSUNG THE FRAME
   Im Betrachter: 📺-Knopf für das einzelne Foto oder Video.
   Mit der Fernbedienung blättern: Bibliothek › Fernseher › "FotoArchiv im Heimnetz für den
      Fernseher freigeben" einschalten. Am Fernseher dann Quelle › "FotoArchiv" (Samsung:
-     Verbundene Geräte). Ereignisse, Alben, Jahre/Monate, Personen, Favoriten; ← → blättert,
+     Verbundene Geräte). Ereignisse, Alben, Jahre/Monate, Ordner, Personen, Favoriten (alt → neu); ← → blättert,
      ▶ startet die Diashow des Fernsehers. Private und ausgeblendete Fotos erscheinen dort nie.
      Geht nur, solange FotoArchiv am PC läuft.
 

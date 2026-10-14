@@ -268,6 +268,27 @@ class Client:
         if x.tag == "Error":
             raise S3Error(200, x.findtext("Code"), x.findtext("Message"), dst_key)
 
+    def copy_any(self, src_key, dst_key, size, headers=None, part=1024 ** 3, single_max=5 * 1024 ** 3):
+        """Serverseitige Kopie beliebiger Größe: bis 5 GB in einem Stück, darüber in Teilen (UploadPartCopy)."""
+        if size <= single_max:
+            return self.copy(src_key, dst_key)
+        src = "/%s/%s" % (_q(self.bucket), _q(src_key, "-_.~/"))
+        uid = self.mp_create(dst_key, headers or {})
+        parts = []
+        try:
+            for n, start in enumerate(range(0, size, part), 1):
+                end = min(size, start + part) - 1
+                _r, data = self.request("PUT", dst_key, {"partNumber": n, "uploadId": uid},
+                                        {"x-amz-copy-source": src, "x-amz-copy-source-range": "bytes=%d-%d" % (start, end)})
+                x = _strip_ns(ET.fromstring(data))
+                if x.tag == "Error":
+                    raise S3Error(200, x.findtext("Code"), x.findtext("Message"), dst_key)
+                parts.append((n, (x.findtext("ETag") or "").strip('"')))
+            self.mp_complete(dst_key, uid, parts)
+        except Exception:
+            self.mp_abort(dst_key, uid)
+            raise
+
     def get_policy(self):
         """Bucket-Richtlinie (Text) oder None, wenn keine gesetzt ist."""
         try:

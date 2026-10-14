@@ -16,6 +16,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 PAKET = os.path.join(BASE, "tools", "paket")
 # Werkzeuge, die nur für die eigene Platte gedacht sind, bleiben draußen
 SKIP_TOOLS = {"transcode_list.py", "transcode_apply.py", "dups_identisch.py", "paket", "__pycache__"}
+# Nur lokale Erweiterungen: nicht ins Paket
+SKIP_APP = ("farm.py",)
 EXEC = ("FotoArchiv starten (Mac).command", "FotoArchiv.app/Contents/MacOS/FotoArchiv")
 
 CMD_SHORTCUT = r"""@echo off
@@ -88,6 +90,19 @@ MYLIO_NEU = """MYLIO ÜBERNEHMEN (nur wer bisher Mylio benutzt hat)
 """
 
 
+def strip_local(path):
+    """Blöcke // <lokal:…> … // </lokal:…> und Zeilen mit „// lokal:“ entfernen (nur-lokale Funktionen)."""
+    import re
+
+    s = io.open(path, encoding="utf-8", newline="").read()
+    s = re.sub(r"\n(//|#) <lokal:(\w+)>.*?\n(//|#) </lokal:\2>", "", s, flags=re.S)
+    s = "\n".join(line for line in s.split("\n") if "// lokal:" not in line and "# lokal:" not in line)
+    s = s.replace('<div id="bk-farm"></div>', "")
+    assert "lokal:" not in s, path
+    with open(path, "w", encoding="utf-8", newline="") as f:
+        f.write(s)
+
+
 def liesmich():
     s = io.open(os.path.join(BASE, "LIESMICH.txt"), encoding="utf-8").read()
     s = s.replace("\r\n", "\n")
@@ -95,6 +110,8 @@ def liesmich():
     rest = rest[rest.index("\nFUNKTIONEN\n") + 1:]
     s = ("FotoArchiv – Fotoverwaltung im Browser, ohne Cloud und ohne Abo\n"
          "===============================================================\n\n" + START_NEU + rest)
+    a = s.index("VIDEOUMWANDLUNG ÜBER DIE SICHERUNG")  # nur lokal
+    s = s[:a] + s[s.index("\n\n", a) + 2:]
     a = s.index("MYLIO-DATEN\n")
     b = s.index("\n\n", a)
     s = s[:a] + MYLIO_NEU.rstrip("\n") + s[b:]
@@ -129,8 +146,10 @@ def build(target, zip_it=True):
     out = os.path.join(target, "FotoArchiv")
     if os.path.exists(out):
         shutil.rmtree(out)
-    ign = shutil.ignore_patterns("__pycache__", "*.pyc")
+    ign = shutil.ignore_patterns("__pycache__", "*.pyc", *SKIP_APP)
     shutil.copytree(os.path.join(BASE, "app"), os.path.join(out, "app"), ignore=ign)
+    for f in ("static/backup.js", "server.py", "backup.py"):
+        strip_local(os.path.join(out, "app", *f.split("/")))
     shutil.copytree(os.path.join(BASE, "models"), os.path.join(out, "models"))
     shutil.copytree(os.path.join(BASE, "runtime"), os.path.join(out, "runtime"))
     os.makedirs(os.path.join(out, "tools"))

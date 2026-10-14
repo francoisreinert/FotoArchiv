@@ -231,8 +231,21 @@ def _items_sql(where, args, order="i.taken"):
 def _children(con, oid):
     """Liefert (container-Liste, item-SQL) für ein Objekt. container: (id, titel, anzahl_oder_None)."""
     if oid == "0":
-        return [("ev", "Ereignisse", None), ("al", "Alben", None), ("yr", "Jahre", None),
-                ("pe", "Personen", None), ("fav", "Favoriten", None), ("new", "Neueste 500", None)], None
+        top = [("ev", "Ereignisse", None), ("al", "Alben", None), ("yr", "Jahre", None), ("od", "Ordner", None),
+               ("pe", "Personen", None), ("fav", "Favoriten", None), ("new", "Neueste 500", None)]
+        return top, None
+    if oid == "od" or oid.startswith("od:"):
+        pfx = "" if oid == "od" else oid[3:]
+        subs = {}
+        for f, n in con.execute("SELECT i.folder, COUNT(*) FROM items i WHERE " + VISIBLE + " GROUP BY i.folder"):
+            if pfx and not (f or "").startswith(pfx + "/"):
+                continue
+            rest = (f or "")[len(pfx) + 1:] if pfx else (f or "")
+            if rest:
+                seg = rest.split("/")[0]
+                subs[seg] = subs.get(seg, 0) + n
+        conts = [("od:" + (pfx + "/" if pfx else "") + s, s, None) for s in sorted(subs, key=str.lower)]
+        return conts, (_items_sql("i.folder=?", (pfx,), "i.taken, i.name") if pfx else None)
     if oid == "ev":
         return [("ev:%d" % r[0], r[1], None) for r in con.execute(
             "SELECT id, name FROM events WHERE COALESCE(private,0)=0 ORDER BY start DESC")], None
@@ -274,8 +287,10 @@ def _children(con, oid):
 
 
 def _parent(oid):
-    if oid in ("ev", "al", "yr", "pe", "fav", "new"):
+    if oid in ("ev", "al", "yr", "od", "pe", "fav", "new"):
         return "0"
+    if oid.startswith("od:"):
+        return "od:" + oid[3:].rsplit("/", 1)[0] if "/" in oid else "od"
     if oid.startswith("mo:"):
         return "yr:" + oid[3:7]
     if ":" in oid:
@@ -304,7 +319,7 @@ def _item_didl(r, parent, base):
         cls = "object.item.imageItem.photo"
     title = os.path.splitext(name)[0]
     if taken:
-        title = taken[8:10] + "." + taken[5:7] + "." + taken[:4] + " " + taken[11:16]
+        title = taken[:10] + " " + taken[11:16]
     return ('<item id="i:%d" parentID="%s" restricted="1"><dc:title>%s</dc:title><upnp:class>%s</upnp:class>'
             '<dc:date>%s</dc:date>%s<res protocolInfo="%s">%s</res>'
             '<upnp:albumArtURI dlna:profileID="JPEG_TN">%s</upnp:albumArtURI></item>'

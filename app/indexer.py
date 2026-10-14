@@ -425,7 +425,7 @@ def _mylio_dates_places(con, data, by_key):
     Mylio hat Vorrang vor Kamera/XMP/Dateidatum – außer das Datum wurde in FotoArchiv selbst gesetzt.
     Teilen sich mehrere Dateien einen Namen, nur wenn das Kameradatum zur Datei passt."""
     info = {r[0]: r[1:] for r in con.execute(
-        "SELECT id, taken, taken_src, usertaken, lat, lon FROM items WHERE proc_ver > 0")}
+        "SELECT id, taken, taken_src, usertaken, lat, lon, kind, ext FROM items WHERE proc_ver > 0")}
     dates, places = [], []
     for k, m in data.get("media", {}).items():
         if not ("t" in m or "u" in m or "g" in m):
@@ -434,14 +434,17 @@ def _mylio_dates_places(con, data, by_key):
         for iid in ids:
             if iid not in info:
                 continue
-            taken, src, usertaken, lat, lon = info[iid]
+            taken, src, usertaken, lat, lon, kind, ext = info[iid]
+            if kind == "video" and src == "video" and (ext or "").lower() in ("mts", "m2ts"):
+                usertaken = usertaken or taken  # AVCHD-Kamerazeit schlägt Mylio (Mylio lag dort 1 h bzw. Jahre daneben)
             if len(ids) > 1:
                 cam = m.get("d")
                 if not (taken and cam and _secs(taken, cam) <= 120) and not (taken and m.get("t") and _secs(taken, m["t"]) <= 2):
                     continue
             if not usertaken:
                 if m.get("u"):
-                    if src not in ("exif", "video", "undated") and taken is not None:
+                    # Videos mit Datum im Dateinamen behalten es (z. B. "2008_12_24_QT6_DV_PAL.mov")
+                    if src not in ("exif", "video", "undated") and taken is not None and not (kind == "video" and src == "name"):
                         dates.append((None, "undated", iid))
                 elif m.get("t"):
                     t, te = m["t"], m.get("te")

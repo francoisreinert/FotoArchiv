@@ -775,6 +775,57 @@ const routes = {
     };
     if (st.running) setTimeout(() => { if (location.hash.startsWith("#/dokumente") && !(currentGrid && currentGrid.sel.size)) reloadInPlace(); }, 15000);
   },
+  // Fotos ohne Datum, deren Dateiname eines enthält: prüfen und übernehmen
+  async namensdatum() {
+    clearMain();
+    const page = document.createElement("div");
+    page.className = "page";
+    page.innerHTML = `<h1>Datum aus dem Dateinamen</h1><div class="empty">wird geladen …</div>`;
+    main.appendChild(page);
+    const list = await api("/api/namedates");
+    const num = n => n.toLocaleString("de-DE");
+    if (!list.length) { page.innerHTML = `<h1>Datum aus dem Dateinamen</h1><div class="empty">Keine Fotos mehr – alles erledigt.</div>`; return; }
+    const warn = list.filter(x => x.warn).length;
+    const folders = [...new Set(list.map(x => x.folder))];
+    page.innerHTML = `<h1>Datum aus dem Dateinamen <small>${num(list.length)} Fotos</small></h1>
+      <p class="muted">Diese Fotos haben kein sicheres Aufnahmedatum (in Mylio „undatiert“), aber eines im Dateinamen.
+        Angehakt = Datum wird übernommen. ${warn ? `<b>⚠ ${num(warn)}</b> Namen nennen einen anderen Monat als die Zahlen – die sind nicht angehakt.` : ""}
+        Klick aufs Bild zeigt es groß.</p>
+      <div class="row nd-bar"><select id="nd-folder"><option value="">Alle Ordner (${num(folders.length)})</option>
+        ${folders.map(f => `<option value="${esc(f)}">${esc(f)} (${list.filter(x => x.folder === f).length})</option>`).join("")}</select>
+        <button id="nd-all">Alle anhaken</button><button id="nd-none">Keine</button><span style="flex:1"></span>
+        <span class="muted" id="nd-count"></span><button class="primary" id="nd-go">Datum übernehmen</button></div>
+      <div class="nd-grid"></div>`;
+    const grid = $(".nd-grid", page);
+    const checked = new Set(list.filter(x => !x.warn).map(x => x.id));
+    const fmt = d => new Date(d.replace(" ", "T")).toLocaleDateString("de-DE", { day: "2-digit", month: "2-digit", year: "numeric" });
+    const visible = () => { const f = $("#nd-folder", page).value; return list.filter(x => !f || x.folder === f); };
+    const count = () => { $("#nd-count", page).textContent = `${num(checked.size)} angehakt`; };
+    const draw = () => {
+      const v = visible();
+      grid.innerHTML = v.map(x => `<label class="nd-card${x.warn ? " warn" : ""}">
+        <img loading="lazy" src="/thumb/${x.id}" data-open="${x.id}" alt="">
+        <span class="nd-name" title="${esc(x.folder)}/${esc(x.name)}">${esc(x.name)}</span>
+        <span class="nd-date"><input type="checkbox" data-id="${x.id}"${checked.has(x.id) ? " checked" : ""}> → ${fmt(x.date)}</span>
+        ${x.warn ? `<span class="nd-warn">⚠ ${esc(x.warn)}</span>` : ""}</label>`).join("");
+      $$("input[data-id]", grid).forEach(c => c.onchange = () => { c.checked ? checked.add(+c.dataset.id) : checked.delete(+c.dataset.id); count(); });
+      $$("[data-open]", grid).forEach(im => im.onclick = e => { e.preventDefault(); openViewer(v.map(x => x.id), v.findIndex(x => x.id === +im.dataset.open)); });
+      count();
+    };
+    $("#nd-folder", page).onchange = draw;
+    $("#nd-all", page).onclick = () => { visible().forEach(x => checked.add(x.id)); draw(); };
+    $("#nd-none", page).onclick = () => { visible().forEach(x => checked.delete(x.id)); draw(); };
+    $("#nd-go", page).onclick = async () => {
+      if (!checked.size) return toast("Nichts angehakt");
+      const r = await api("/api/namedates/apply", { ids: [...checked] });
+      toast(`Datum bei ${num(r.count)} Fotos übernommen`);
+      loadYears().catch(() => {});
+      const y = main.scrollTop;
+      await routes.namensdatum();
+      main.scrollTop = y;
+    };
+    draw();
+  },
   async favoriten() {
     setSearchScope("Favoriten");
     await showGrid("Favoriten", { fav: "1" }, { empty: "Noch keine Favoriten. Im Betrachter mit ☆ oder Taste F markieren. Mylio-Bewertungen ab 4 Sternen erscheinen hier auch." });
@@ -2973,6 +3024,24 @@ function loadLeaflet() {
 }
 
 // ---------------------------------------------------------------- Router ----
+// Sicherung/Wiederherstellen (backup.py) läuft: kleine Karte unten auf allen Seiten, Klick führt zur Sicherung
+async function pollBkBar() {
+  const el = $("#bkbar");
+  const st = await api("/api/backup/status").catch(() => null);
+  if (!st || !st.running || location.hash.startsWith("#/sicherung")) {
+    el.hidden = true;
+    setTimeout(pollBkBar, st && st.running ? 5000 : 30000);
+    return;
+  }
+  const pct = st.bytes_total ? Math.min(100, 100 * st.bytes_done / st.bytes_total) : 0;
+  const what = { backup: "Sicherung", restore: "Wiederherstellen", catalog: "Katalog laden", prune: "Aufräumen", view: "Archiv-Ansicht" }[st.kind] || "Sicherung";
+  el.hidden = false;
+  el.innerHTML = st.files_total
+    ? `☁ ${what} <b>${pct.toFixed(pct < 10 ? 1 : 0).replace(".", ",")} %</b><span class="progress"><i style="width:${pct.toFixed(1)}%"></i></span>
+       <small>${st.eta ? "noch ca. " + fmtEta(st.eta) : st.files_done.toLocaleString("de-DE") + " von " + st.files_total.toLocaleString("de-DE")}</small>`
+    : `☁ ${what} <small>${esc(st.phase)}</small>`;
+  setTimeout(pollBkBar, 5000);
+}
 // Ansicht neu laden, ohne die Scroll-Position zu verlieren
 function reloadInPlace() {
   const place = currentGrid ? currentGrid.place() : null;
@@ -3007,6 +3076,7 @@ const personsReady = loadPersons().catch(() => []);
   if (fresh) history.replaceState(null, "", "#/start");
   loadYears().catch(() => {});
   await api("/api/backup").then(c => { state.hasS3 = c.targets.length > 0; }).catch(() => {});  // vor dem ersten Routen
+  pollBkBar();
   api("/api/panos/count").then(r => { $('#kindsw [data-kind="pano"]').hidden = !r.count; }).catch(() => {});  // 360°-Umschalter
   // erst nach video.js/backup.js routen – sonst kennt der direkte Aufruf von #/video oder #/sicherung die Seite noch nicht
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", route, { once: true }); else route();

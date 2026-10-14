@@ -550,15 +550,55 @@ def _service(acc_id, apple_id, password=None):
     return PyiCloudService("com", apple_id, lambda: password, cookie_directory=_cookie_dir(acc_id))
 
 
+def icloud_log(apple_id, text):
+    """Anmeldeverlauf in data/icloud/anmeldung.log (ohne Passwort/Code)."""
+    try:
+        with open(os.path.join(ICLOUD_DIR, "anmeldung.log"), "a", encoding="utf-8") as f:
+            f.write("%s  %s  %s\n" % (datetime.datetime.now().isoformat(sep=" ", timespec="seconds"), apple_id, text))
+    except OSError:
+        pass
+
+
+def _login_reason(ex):
+    """Apples Antwort aus der Ausnahmekette holen und verständlich machen."""
+    parts, code = [], None
+    e = ex
+    while e is not None:
+        code = code or getattr(e, "code", None)
+        txt = getattr(e, "reason", None) or (e.args[0] if e.args and isinstance(e.args[0], str) else str(e))
+        try:  # Apple: {"serviceErrors": [{"code": "-20101", "message": "..."}]}
+            txt = "; ".join("%s %s" % (x.get("code"), x.get("message")) for x in json.loads(txt)["serviceErrors"])
+        except Exception:
+            txt = " ".join(str(txt).split())[:200]
+        if txt not in parts:
+            parts.append(txt)
+        e = e.__cause__ or e.__context__
+    raw = " | ".join(parts) + (" (HTTP %s)" % code if code else "")
+    name = type(ex).__name__
+    if name == "PyiCloudServiceUnavailableException" or code == "503":
+        hint = "Apple lehnt Anmeldungen gerade ab (zu viele Versuche?). Bitte 30–60 Minuten warten und dann einmal neu versuchen."
+    elif "srp" in raw.lower() and "initiate" in raw.lower():
+        hint = "Apple kennt diese Apple-ID so nicht oder lehnt die Anmeldung ab. Apple-ID genau prüfen (E-Mail-Adresse)."
+    elif "Invalid email/password" in raw:
+        hint = "Apple meldet: Apple-ID oder Passwort falsch. Bei vielen Fehlversuchen sperrt Apple kurz – dann auf appleid.apple.com/iforgot prüfen."
+    elif "authentication token" in raw:
+        hint = ("Passwort stimmt, aber iCloud gibt die Daten nicht frei. Meist ist „Erweiterter Datenschutz“ an oder "
+                "„Auf iCloud-Daten im Web zugreifen“ aus (iPhone: Einstellungen › Name › iCloud).")
+    else:
+        hint = "Anmeldung fehlgeschlagen."
+    return hint, raw
+
+
 def login(apple_id, password, label):
     """Anmelden. Antwort: 'ok' oder 'code' (2FA-Code nötig). Das Passwort wird nicht gespeichert."""
-    from pyicloud_ipd.exceptions import PyiCloudFailedLoginException
-
     acc_id = _account_id(apple_id)
     try:
         api = _service(acc_id, apple_id, password)
-    except PyiCloudFailedLoginException:
-        return {"status": "error", "error": "Anmeldung fehlgeschlagen – Apple-ID oder Passwort falsch?"}
+    except Exception as ex:
+        hint, raw = _login_reason(ex)
+        icloud_log(apple_id, "FEHLER %s  [%s]" % (hint, raw))
+        return {"status": "error", "error": hint + " (Apple: %s)" % raw[:200]}
+    icloud_log(apple_id, "Passwort ok, " + ("Code nötig" if api.requires_2fa else "angemeldet"))
     accs = [a for a in _accounts() if a["id"] != acc_id]
     old = next((a for a in _accounts() if a["id"] == acc_id), {})
     accs.append({"id": acc_id, "apple_id": apple_id, "label": label or old.get("label") or apple_id,
@@ -611,6 +651,7 @@ def submit_code(acc_id, code):
     if len(code) != 6:
         return {"status": "error", "error": "Der Code hat 6 Ziffern."}
     ok = api.validate_2fa_code_sms(p["sms"], code) if p["sms"] is not None else api.validate_2fa_code(code)
+    icloud_log(getattr(api, "apple_id", acc_id), "Code " + ("ok" if ok else "falsch/abgelaufen"))
     if not ok:
         return {"status": "error", "error": "Code falsch oder abgelaufen – bitte nochmal oder neuen Code anfordern."}
     _pending.pop(acc_id, None)

@@ -53,7 +53,7 @@ def load():
     d.setdefault("backup", {})
     b = d["backup"]
     for k, v in (("target", ""), ("videos", True), ("dups", True), ("previews", False), ("limit_mbit", 0),
-                 ("auto_hours", 0), ("workers", 4), ("mirror_deletes", False)):
+                 ("auto_hours", 0), ("workers", 4), ("mirror_deletes", False), ("view", False)):
         b.setdefault(k, v)
     return d
 
@@ -348,6 +348,8 @@ def _local_files(cfg, con):
                 if rel in skip_rel:
                     continue
                 out.append((rel, full, st.st_size, st.st_mtime))
+                if len(out) % 1000 == 0:  # Zwischenstand, damit die Anzeige nicht stillzustehen scheint
+                    JOB.phase = "Dateien zusammenstellen (%s Dateien)" % format(len(out), ",").replace(",", ".")
         JOB.phase = "Dateien zusammenstellen (%s Dateien)" % format(len(out), ",").replace(",", ".")
     return out
 
@@ -476,6 +478,8 @@ def run_backup():
     for x in c.list(pfx):
         if x[0] != "prefix":
             remote[x[0]] = x[1]
+            if len(remote) % 1000 == 0:
+                JOB.phase = "Abgleich mit der Sicherung (%s Dateien dort gefunden)" % format(len(remote), ",").replace(",", ".")
     known = {r[0]: (r[1], r[2]) for r in con.execute("SELECT rel, size, mtime FROM backup_files WHERE target=?", (tid,))}
     todo, now = [], datetime.datetime.now().isoformat(timespec="seconds")
     adopt = []
@@ -548,8 +552,14 @@ def run_backup():
     con.commit()
     con.close()
     errs = len(JOB.errors)
-    JOB.message = "Fertig: %d Dateien hochgeladen, %d waren schon gesichert%s." % (
+    msg = "Fertig: %d Dateien hochgeladen, %d waren schon gesichert%s." % (
         JOB.files_done - errs, JOB.files_skip, (", %d Fehler" % errs) if errs else "")
+    if load()["backup"].get("view") and not JOB.stop:  # Archiv-Ansicht nachziehen (archview.py); Haken frisch lesen
+        import archview
+
+        archview.run(tid, cfg)
+        msg += " " + JOB.message
+    JOB.message = msg
 
 
 def _runner(fn, kind, *args):
@@ -631,6 +641,7 @@ def auto_loop():
             hours = float(d["backup"].get("auto_hours") or 0)
             tid = d["backup"].get("target")
             if not hours or not tid or JOB.running or indexer.PROGRESS.running:
+                sync_view()
                 continue
             con = connect()
             last = (con.execute("SELECT value FROM meta WHERE key=?", ("last_backup_" + tid,)).fetchone() or [None])[0]
@@ -639,6 +650,27 @@ def auto_loop():
                 start_backup()
         except Exception:
             pass
+        sync_view()
+
+
+def sync_view():
+    """Archiv-Ansicht im Bucket nachziehen, wenn sich lokal etwas geändert hat (Stichwörter, Alben, Personen …) –
+    nur mit Haken „Archiv-Ansicht pflegen“, wenn nichts anderes läuft und die Sicherung erreichbar ist."""
+    import indexer
+
+    try:
+        d = load()
+        tid = d["backup"].get("target")
+        if not tid or not d["backup"].get("view") or JOB.running or indexer.PROGRESS.running:
+            return False
+        import archview
+
+        if archview.changed(tid) or archview.private_changed(tid):
+            client(target(tid)).check()  # erreichbar? (sonst Ausnahme → beim nächsten Mal)
+            return archview.start(tid)
+    except Exception:
+        pass
+    return False
 
 
 # ---------------------------------------------------------------- Gelöschtes ----
@@ -677,6 +709,84 @@ def on_purge(con, rels):
             wc.close()
     threading.Thread(target=work, daemon=True).start()
     return {"mirrored": len({r for _t, r in hits})}
+
+
+def _anon(url):
+    """HTTP-Status eines Abrufs ohne Anmeldung (0 = nicht erreichbar)."""
+    import ssl
+    import urllib.request
+
+    ctx = ssl.create_default_context()
+    ctx.check_hostname = False
+    ctx.verify_mode = ssl.CERT_NONE  # nur Erreichbarkeit prüfen, keine Daten übernehmen
+    try:
+        with urllib.request.urlopen(urllib.request.Request(url, method="GET"), timeout=15, context=ctx) as r:
+            return r.status
+    except urllib.error.HTTPError as e:
+        return e.code
+    except Exception:
+        return 0
+
+
+def exposure(tid):
+    """Ist die Sicherung ohne Schlüssel lesbar/auflistbar? (Bucket-Richtlinie mit Principal "*")"""
+    t = target(tid)
+    c = client(t)
+    pfx = prefix_of(t)
+    probe = next((x[0] for x in c.list(pfx, "/") if x[0] != "prefix"), None) or pfx + "FotoArchiv-Ansicht/index.html"
+    base = c.public_url("")
+    read = _anon(c.public_url(probe)) == 200
+    lst = _anon(base + ("&" if "?" in base else "?") + "list-type=2&max-keys=1&prefix=" + urllib_quote(pfx)) == 200
+    return {"public_read": read, "public_list": lst, "prefix": pfx}
+
+
+def urllib_quote(s):
+    import urllib.parse
+
+    return urllib.parse.quote(s, safe="")
+
+
+def secure_prefix(tid):
+    """Bucket-Richtlinie so ändern, dass <Präfix>* für Anonyme gesperrt ist; alles andere im Bucket bleibt, wie es war
+    (öffentliches Lesen, Auflisten nur ordnerweise und nie unter dem Präfix). Signierte Links funktionieren weiter.
+    Album-Webseiten (FotoArchiv-Web/) bleiben öffentlich lesbar. Vorherige Richtlinie → data/bucket_richtlinie_*.json;
+    klappt danach der eigene Zugriff nicht, wird sofort zurückgestellt."""
+    t = target(tid)
+    c = client(t)
+    pfx = prefix_of(t)
+    if not pfx:
+        raise ValueError("Die Sicherung liegt ohne Ordner direkt im Bucket – dann bitte den ganzen Bucket privat stellen.")
+    old = c.get_policy()
+    stamp = datetime.datetime.now().strftime("%Y%m%d-%H%M%S")
+    if old:
+        with open(os.path.join(common.DATA_DIR, "bucket_richtlinie_%s.json" % stamp), "w", encoding="utf-8") as f:
+            f.write(old)
+    pol = json.loads(old) if old else {"Statement": []}
+    arn = "urn:sgws:s3:::" if "urn:sgws" in (old or "") else "arn:aws:s3:::"
+    B = arn + t["bucket"]
+    anon = lambda st: st.get("Principal") in ("*", {"AWS": "*"}, {"SGWS": "*"})  # noqa: E731
+    keep = [st for st in pol.get("Statement", []) if not anon(st)]
+    had_public = any(anon(st) for st in pol.get("Statement", []))
+    new = keep
+    if had_public:  # bisher öffentlich: außerhalb der Sicherung so lassen
+        new = [{"Sid": "OeffentlichLesenOhneFotoArchiv", "Effect": "Allow", "Principal": "*", "Action": ["s3:GetObject"],
+                "NotResource": [B + "/" + pfx + "*"]},
+               {"Sid": "OeffentlichOrdnerListeOhneFotoArchiv", "Effect": "Allow", "Principal": "*", "Action": ["s3:ListBucket"],
+                "Resource": [B], "Condition": {"StringEquals": {"s3:delimiter": "/"},
+                                               "StringNotLike": {"s3:prefix": pfx.rstrip("/") + "*"}}}] + keep
+    new.append({"Sid": "FotoArchivWebLesen", "Effect": "Allow", "Principal": "*", "Action": ["s3:GetObject"],
+                "Resource": [B + "/" + pfx + "FotoArchiv-Web/*"]})
+    c.put_policy(json.dumps({"Statement": new}))
+    try:  # eigener Zugriff muss weiter gehen
+        next(iter(c.list(pfx, "/")), None)
+        c.head(pfx + "FotoArchiv-Ansicht/index.html")
+    except Exception:
+        if old:
+            c.put_policy(old)
+        raise
+    return dict(exposure(tid), backup_file="bucket_richtlinie_%s.json" % stamp if old else None)
+
+
 
 
 def orphans(tid):
@@ -744,7 +854,7 @@ def browse(tid, path=""):
         for x in c.list(base, "/"):
             if x[0] == "prefix":
                 name = x[1][len(base):].rstrip("/")
-                if not (not path and name + "/" == CAT_DIR):
+                if not (not path and name + "/" in (CAT_DIR, "FotoArchiv-Ansicht/", "FotoArchiv-Transcode/")):
                     folders.append(name)
             else:
                 files.append({"name": x[0][len(base):], "size": x[1], "modified": x[3]})
@@ -763,7 +873,7 @@ def run_restore(tid, path, dest_dir):
     JOB.phase = "Liste der Sicherung laden"
     todo = []
     for x in c.list(base):
-        if x[0] == "prefix" or x[0].startswith(pfx + CAT_DIR):
+        if x[0] == "prefix" or x[0].startswith(pfx + CAT_DIR) or x[0].startswith(pfx + "FotoArchiv-Ansicht/")                 or x[0].startswith(pfx + "FotoArchiv-Transcode/"):
             continue
         rel = x[0][len(pfx):]
         dest = os.path.join(dest_dir, *rel.split("/")) if dest_dir else to_abs(rel)

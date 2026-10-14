@@ -1,0 +1,639 @@
+<!doctype html>
+<html lang="de"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1">
+<meta name="robots" content="noindex,nofollow"><title>FotoArchiv – Sicherung</title>
+<style>
+:root{--bg:#111315;--panel:#1a1d20;--panel2:#23272b;--line:#2e3337;--fg:#e8e9ea;--mut:#9aa0a6;--ac:#5aa9ff;--top:56px}
+*{box-sizing:border-box}html,body{margin:0;background:var(--bg);color:var(--fg);font:15px/1.4 system-ui,-apple-system,"Segoe UI",Roboto,sans-serif}
+a{color:var(--ac);text-decoration:none}
+button,select,input{background:var(--panel);color:var(--fg);border:1px solid var(--line);border-radius:8px;padding:6px 10px;font:inherit}
+button{cursor:pointer}button.on{background:var(--ac);border-color:var(--ac);color:#fff}
+.top{position:fixed;left:0;right:0;top:0;height:var(--top);z-index:6;background:var(--bg);border-bottom:1px solid var(--line);display:flex;gap:8px;align-items:center;padding:0 12px}
+.top .brand{font-weight:700;font-size:18px;color:var(--fg);margin-right:6px;white-space:nowrap}
+.top input[type=search]{flex:1;min-width:120px;max-width:460px}.top .cam{max-width:190px}
+.seg{display:flex}.seg button{border-radius:0;margin-left:-1px;padding:6px 10px;white-space:nowrap}.seg button:first-child{border-radius:8px 0 0 8px}.seg button:last-child{border-radius:0 8px 8px 0}
+.sp{flex:1}
+.side{position:fixed;top:var(--top);bottom:0;left:0;width:190px;overflow-y:auto;border-right:1px solid var(--line);padding:10px 8px;background:var(--bg);z-index:4}
+.side a{display:block;color:var(--fg);padding:7px 10px;border-radius:8px}.side a.on{background:var(--panel2)}
+.side .yrs{margin-top:14px;border-top:1px solid var(--line);padding-top:8px}.side .yrs a{display:flex;padding:3px 10px;font-size:13px}
+.side .yrs a small{margin-left:auto;color:var(--mut)}
+main{margin-left:190px;padding:calc(var(--top) + 10px) 16px 60px}
+h1{font-size:20px;margin:6px 0 12px;display:flex;align-items:baseline;gap:10px;flex-wrap:wrap}h1 small{color:var(--mut);font-size:13px;font-weight:normal}
+h2{font-size:15px;margin:18px 0 8px;position:sticky;top:var(--top);background:var(--bg);z-index:2;padding:6px 0}h2 small{color:var(--mut);font-weight:normal;margin-left:6px}
+.g{display:grid;grid-template-columns:repeat(auto-fill,minmax(var(--cell,150px),1fr));gap:3px}
+.c{position:relative;aspect-ratio:1;background:#1d2023;border-radius:3px;overflow:hidden;cursor:pointer}
+.c img{width:100%;height:100%;object-fit:cover;display:block}.c:hover img{filter:brightness(1.12)}
+.c .v{position:absolute;right:5px;bottom:4px;font-size:11px;background:rgba(0,0,0,.65);border-radius:4px;padding:0 5px;color:#fff}
+.c .f{position:absolute;left:5px;top:3px;font-size:13px;color:#ffd54a;text-shadow:0 0 3px #000}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:12px}
+.card{background:var(--panel);border:1px solid var(--line);border-radius:10px;overflow:hidden;cursor:pointer;color:var(--fg)}
+.card img{width:100%;aspect-ratio:4/3;object-fit:cover;display:block;background:#1d2023}.card div{padding:8px 10px}.card small{color:var(--mut);display:block}
+.card.round img{aspect-ratio:1}
+.cal{display:grid;grid-template-columns:70px repeat(12,minmax(0,1fr));gap:4px;align-items:stretch}
+.cal .yr{font-weight:700;align-self:center}
+.cal .mo{position:relative;aspect-ratio:1;border-radius:6px;overflow:hidden;background:var(--panel);display:block;color:#fff}
+.cal .mo img{width:100%;height:100%;object-fit:cover;display:block;opacity:.85}
+.cal .mo .m{position:absolute;left:5px;top:3px;font-size:12px;text-shadow:0 0 3px #000}.cal .mo .n{position:absolute;right:5px;bottom:3px;font-size:11px;text-shadow:0 0 3px #000}
+.cal .mo .ev{position:absolute;left:0;right:0;bottom:16px;font-size:10px;padding:0 4px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis;background:rgba(0,0,0,.5)}
+.cal .mo.empty{background:#16181a}.cal .mo.empty .m{color:var(--mut);text-shadow:none}
+.stats{display:flex;gap:10px;flex-wrap:wrap;margin-bottom:10px}.stat{background:var(--panel);border:1px solid var(--line);border-radius:10px;padding:10px 14px;min-width:120px}
+.stat b{display:block;font-size:22px}.stat small{color:var(--mut)}
+.crumbs{color:var(--mut);margin-bottom:6px}.crumbs a{margin-right:4px}
+#map{height:calc(100vh - var(--top) - 90px);border-radius:10px}
+.muted{color:var(--mut)}.empty{color:var(--mut);text-align:center;padding:60px 0}
+#more{height:40px}
+#lb{position:fixed;inset:0;background:rgba(0,0,0,.97);display:none;z-index:9}#lb.on{display:block}
+#lb .bar{position:absolute;left:0;right:0;top:0;height:46px;background:#000;z-index:3;display:flex;align-items:center;gap:8px;padding:0 10px;color:var(--mut);font-size:13px}
+#lb .bar .t{white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+#lb .m{position:absolute;top:46px;bottom:36px;left:0;right:0;display:flex;align-items:center;justify-content:center}
+#lb.info .m{right:320px}
+#lb img,#lb video{max-width:100%;max-height:100%;object-fit:contain}
+#lb .nav{position:absolute;top:50%;width:50px;height:50px;border-radius:25px;background:rgba(0,0,0,.5);border:0;font-size:26px;color:#fff;z-index:2}
+#lb .p{left:10px}#lb .n{right:10px}#lb.info .n{right:330px}
+#lb .note{position:absolute;bottom:8px;left:0;right:0;text-align:center;color:var(--mut);font-size:13px}
+#lb .inf{position:absolute;top:46px;right:0;bottom:0;width:320px;background:var(--panel);border-left:1px solid var(--line);padding:14px;overflow-y:auto;display:none}
+#lb.info .inf{display:block}.inf dl{display:grid;grid-template-columns:90px 1fr;gap:6px 10px;margin:0}.inf dt{color:var(--mut)}.inf dd{margin:0;word-break:break-word}
+.inf .chip{display:inline-block;background:var(--panel2);border-radius:12px;padding:1px 8px;margin:0 4px 4px 0;font-size:13px}
+canvas.pano{width:100%;height:100%;display:block;cursor:grab}
+.login{max-width:420px;margin:12vh auto;background:var(--panel);border:1px solid var(--line);border-radius:12px;padding:22px}
+.login input{width:100%;margin:4px 0 12px;background:#0d0f11}.login .err{color:#e88;min-height:20px}
+.load{max-width:420px;margin:20vh auto;text-align:center;color:var(--mut)}.load .bar2{height:6px;background:var(--panel2);border-radius:3px;overflow:hidden;margin-top:10px}
+.load .bar2 i{display:block;height:100%;background:var(--ac);width:30%;animation:ld 1.2s infinite ease-in-out}@keyframes ld{0%{margin-left:-30%}100%{margin-left:100%}}
+@media (max-width:760px){
+  .side{position:fixed;top:var(--top);left:0;right:0;bottom:auto;width:auto;height:44px;display:flex;overflow-x:auto;padding:4px;border-right:0;border-bottom:1px solid var(--line)}
+  .side a{white-space:nowrap;padding:6px 10px}.side .yrs{display:none}
+  main{margin-left:0;padding-top:calc(var(--top) + 54px)}
+  .top .brand{display:none}.top .cam{display:none}.g{--cell:105px}
+  h2{top:calc(var(--top) + 44px)}
+  .cal{grid-template-columns:44px repeat(6,minmax(0,1fr))}.cal .yr{grid-row:span 2}
+  #lb.info .m{right:0;bottom:45%}#lb .inf{top:55%;width:auto;left:0}#lb.info .n{right:10px}
+}
+</style></head><body>
+<div id="app"></div>
+<div id="lb"><div class="bar"><button id="lbx" title="Schließen (Esc)">✕</button><span class="t" id="lbt"></span><span class="sp"></span>
+<button id="lbi" title="Info (i)">ⓘ</button><a id="lbo" target="_blank" rel="noopener">Original</a></div>
+<div class="m" id="lbm"></div><button class="nav p" id="lbp">‹</button><button class="nav n" id="lbn">›</button><div class="note" id="lbnote"></div><div class="inf" id="lbinf"></div></div>
+<script>
+"use strict";
+const CFG = /*CONFIG*/{};
+const MONTHS = ["Januar","Februar","März","April","Mai","Juni","Juli","August","September","Oktober","November","Dezember"];
+const SHORT = ["Jan","Feb","Mär","Apr","Mai","Jun","Jul","Aug","Sep","Okt","Nov","Dez"];
+const $ = (s, r) => (r || document).querySelector(s);
+const $$ = (s, r) => [...(r || document).querySelectorAll(s)];
+const esc = s => String(s).replace(/[&<>"]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const num = n => (n || 0).toLocaleString("de-DE");
+const LS = "fa-view|" + CFG.host + "|" + CFG.bucket;
+let KEYS = null;
+try { KEYS = JSON.parse(localStorage.getItem(LS) || "null"); } catch (e) { KEYS = null; }
+
+// ---------------------------------------------------------------- S3-Signatur (wie app/s3.py) ----
+const enc = new TextEncoder();
+const q = (s, keepSlash) => { let r = encodeURIComponent(s).replace(/[!'()*]/g, c => "%" + c.charCodeAt(0).toString(16).toUpperCase()); return keepSlash ? r.replace(/%2F/g, "/") : r; };
+const hex = b => [...new Uint8Array(b)].map(x => x.toString(16).padStart(2, "0")).join("");
+async function hmac(key, msg, algo = "SHA-256") {
+  const k = await crypto.subtle.importKey("raw", typeof key === "string" ? enc.encode(key) : key, { name: "HMAC", hash: algo }, false, ["sign"]);
+  return crypto.subtle.sign("HMAC", k, enc.encode(msg));
+}
+function hostPath(key) {
+  if (CFG.path_style) return [CFG.host, CFG.base_path + "/" + q(CFG.bucket) + "/" + q(key, true)];
+  return [CFG.bucket + "." + CFG.host, CFG.base_path + "/" + q(key, true)];
+}
+const NOW = new Date();
+const AMZDATE = NOW.toISOString().replace(/[-:]/g, "").replace(/\.\d+/, "");
+const DAY = AMZDATE.slice(0, 8);
+let signingKey = null;
+const signed = new Map();
+async function sign(key) {
+  if (signed.has(key)) return signed.get(key);
+  const [host, path] = hostPath(key);
+  let url;
+  if (CFG.sig === "v2") {
+    const exp = String(Math.floor(NOW.getTime() / 1000) + 7 * 86400);
+    const auth = CFG.base_path + "/" + q(CFG.bucket) + "/" + q(key, true);
+    const s = btoa(String.fromCharCode(...new Uint8Array(await hmac(KEYS.sk, "GET\n\n\n" + exp + "\n" + auth, "SHA-1"))));
+    url = CFG.scheme + "://" + host + path + "?AWSAccessKeyId=" + q(KEYS.ak) + "&Expires=" + exp + "&Signature=" + q(s);
+  } else {
+    const scope = DAY + "/" + CFG.region + "/s3/aws4_request";
+    const qs = [["X-Amz-Algorithm", "AWS4-HMAC-SHA256"], ["X-Amz-Credential", KEYS.ak + "/" + scope], ["X-Amz-Date", AMZDATE],
+      ["X-Amz-Expires", "604800"], ["X-Amz-SignedHeaders", "host"]].sort((a, b) => a[0] < b[0] ? -1 : 1).map(([k, v]) => q(k) + "=" + q(v)).join("&");
+    const creq = ["GET", path, qs, "host:" + host + "\n", "host", "UNSIGNED-PAYLOAD"].join("\n");
+    const sts = ["AWS4-HMAC-SHA256", AMZDATE, scope, hex(await crypto.subtle.digest("SHA-256", enc.encode(creq)))].join("\n");
+    if (!signingKey) {
+      let k = await hmac("AWS4" + KEYS.sk, DAY);
+      for (const p of [CFG.region, "s3", "aws4_request"]) k = await hmac(k, p);
+      signingKey = k;
+    }
+    url = CFG.scheme + "://" + host + path + "?" + qs + "&X-Amz-Signature=" + hex(await hmac(signingKey, sts));
+  }
+  signed.set(key, url);
+  return url;
+}
+window.FA_SIGN = sign;  // für den Abgleich-Test
+
+function loadScript(key) {
+  return sign(key).then(url => new Promise((res, rej) => {
+    const s = document.createElement("script");
+    s.src = url; s.onload = res; s.onerror = () => rej(new Error("Laden fehlgeschlagen"));
+    document.head.appendChild(s);
+  }));
+}
+
+// ---------------------------------------------------------------- Daten ----
+// Eintrag: [id, "p"|"v", "JJJJ-MM-TT HH:MM", Anzeige o|p|t, Ordner-Nr, Name, Breite, Höhe, Flags(1=Favorit,2=360°), Kamera-Nr, Ort-Nr, Dauer s, lat, lon]
+let D = null;
+const BY = new Map();
+window.FA = { all(d) { D = d; window.__faLoaded && window.__faLoaded(); } };
+async function loadAll() {
+  await new Promise((res, rej) => { window.__faLoaded = res; loadScript(CFG.view + "data/all.js").catch(rej); });
+  D.recs.forEach(r => BY.set(r[0], r));
+  D.byDate = D.recs.slice().sort((a, b) => a[2] < b[2] ? 1 : a[2] > b[2] ? -1 : b[0] - a[0]);  // neueste zuerst
+  D.personsOf = new Map();
+  D.persons.forEach(p => p[2].forEach(id => { (D.personsOf.get(id) || D.personsOf.set(id, []).get(id)).push(p[1]); }));
+  D.albumsOf = new Map();
+  D.albums.forEach(a => a[3].forEach(id => { (D.albumsOf.get(id) || D.albumsOf.set(id, []).get(id)).push(a[1]); }));
+}
+const pathOf = r => (D.folders[r[4]] ? D.folders[r[4]] + "/" : "") + r[5];
+
+// ---------------------------------------------------------------- Filter (für alle Ansichten) ----
+const F = { kind: "alle", cam: "", fav: false };
+try { Object.assign(F, JSON.parse(localStorage.getItem(LS + "|f") || "{}")); } catch (_) {}
+const saveF = () => { try { localStorage.setItem(LS + "|f", JSON.stringify(F)); } catch (_) {} };
+function filt(list) {
+  const cam = F.cam === "" ? null : +F.cam;
+  return list.filter(r => (F.kind === "alle" || (F.kind === "fotos" ? r[1] === "p" : F.kind === "videos" ? r[1] === "v" : (r[8] & 2)))
+    && (cam === null || r[9] === cam) && (!F.fav || (r[8] & 1)));
+}
+
+// ---------------------------------------------------------------- Rahmen ----
+const app = $("#app");
+const NAV = [["start", "Übersicht"], ["fotos", "Fotos"], ["kalender", "Kalender"], ["alben", "Alben & Ereignisse"], ["ordner", "Ordner"],
+  ["personen", "Personen"], ["karte", "Karte"], ["favoriten", "Favoriten"]];
+function frame() {
+  const camOpts = D.cams.map((c, i) => [c, i]).sort((a, b) => a[0].localeCompare(b[0], "de"));
+  app.innerHTML = `<div class="top"><a class="brand" href="#/start">FotoArchiv</a>
+    <input type="search" id="q" placeholder="Suchen: Ort, Ordner, Datei, Kamera, Person, Album, Stichwort …">
+    <div class="seg" id="kind">${[["alle", "Alle"], ["fotos", "Fotos"], ["videos", "Videos"], ["360", "360°"]].map(([k, l]) => `<button data-k="${k}">${l}</button>`).join("")}</div>
+    <select class="cam" id="cam" title="Kamera"><option value="">Alle Kameras</option>${camOpts.map(([c, i]) => `<option value="${i}">${esc(c)}</option>`).join("")}</select>
+    <button id="fav" title="Nur Favoriten">★</button><span class="sp"></span>${D.priv ? `<button id="privbtn" title="Private Fotos anzeigen (Passwort wie in FotoArchiv)">${PRIV ? "🔓 Privat" : "🔒 Privat"}</button>` : ""}<button id="logout" title="Schlüssel in diesem Browser vergessen">Abmelden</button></div>
+    <nav class="side" id="side"></nav><main id="main"></main>`;
+  const upd = () => {
+    $$("#kind button").forEach(b => b.classList.toggle("on", b.dataset.k === F.kind));
+    $("#cam").value = F.cam; $("#fav").classList.toggle("on", F.fav);
+  };
+  upd();
+  $$("#kind button").forEach(b => b.onclick = () => { F.kind = b.dataset.k; saveF(); upd(); route(); });
+  $("#cam").onchange = e => { F.cam = e.target.value; saveF(); route(); };
+  $("#fav").onclick = () => { F.fav = !F.fav; saveF(); upd(); route(); };
+  let qt = null;
+  $("#q").oninput = e => { clearTimeout(qt); qt = setTimeout(() => { const v = e.target.value.trim(); location.hash = v ? "#/suche?q=" + encodeURIComponent(v) : "#/fotos"; }, 350); };
+  if ($("#privbtn")) $("#privbtn").onclick = () => PRIV ? (location.reload()) : privDialog();
+  $("#logout").onclick = () => { try { localStorage.removeItem(LS); } catch (_) {} KEYS = null; location.hash = ""; loginForm(); };
+}
+function side(active, years) {
+  $("#side").innerHTML = NAV.map(([k, l]) => `<a href="#/${k}" class="${k === active ? "on" : ""}">${esc(l)}</a>`).join("")
+    + (years ? `<div class="yrs">${years.map(([y, n]) => `<a href="#/fotos?zu=${y}">${y === "" ? "ohne Datum" : y}<small>${num(n)}</small></a>`).join("")}</div>` : "");
+}
+const main = () => $("#main");
+
+// ---------------------------------------------------------------- Raster (stückweise, mit Monats-Überschriften) ----
+let current = [];
+const io = new IntersectionObserver(es => es.forEach(e => {
+  if (!e.isIntersecting) return;
+  io.unobserve(e.target);
+  srcFor(e.target.dataset.k).then(u => { e.target.src = u; }).catch(() => {});
+}), { rootMargin: "1200px" });
+const thumbKey = id => PRIV && PRIV.tok[id] ? "enc:" + CFG.view + "x/" + PRIV.tok[id] + "t.bin" : CFG.view + "t/" + id + ".jpg";
+const imgTag = id => `<img alt="" data-k="${esc(thumbKey(id))}">`;
+const observe = root => $$("img[data-k]", root).forEach(im => io.observe(im));
+const cell = (r, i) => `<div class="c" data-i="${i}">${imgTag(r[0])}${r[1] === "v" ? `<span class="v">▶${r[11] ? " " + dur(r[11]) : ""}</span>` : (r[8] & 2) ? '<span class="v">360°</span>' : ""}${r[8] & 1 ? '<span class="f">★</span>' : ""}</div>`;
+const dur = s => s >= 3600 ? Math.floor(s / 3600) + ":" + String(Math.floor(s % 3600 / 60)).padStart(2, "0") + ":" + String(s % 60).padStart(2, "0") : Math.floor(s / 60) + ":" + String(s % 60).padStart(2, "0");
+const monthKey = r => r[2] ? r[2].slice(0, 7) : "";
+const monthLabel = k => k ? MONTHS[+k.slice(5, 7) - 1] + " " + k.slice(0, 4) : "ohne Datum";
+let gridObs = null;
+function grid(box, list, opts = {}) {
+  // opts.group: "month" | "day" | null; opts.start: Index, ab dem zuerst gezeigt wird
+  current = list;
+  if (gridObs) gridObs.disconnect();
+  if (!list.length) { box.innerHTML = '<div class="empty">Keine Fotos – Filter oben prüfen.</div>'; return; }
+  box.innerHTML = '<div id="gr"></div><div id="more"></div>';
+  const gr = $("#gr", box);
+  let pos = opts.start || 0;
+  const key = opts.group === "day" ? r => (r[2] || "").slice(0, 10) : opts.group === "month" ? monthKey : null;
+  const label = opts.group === "day" ? k => k ? new Date(k + "T12:00").toLocaleDateString("de-DE", { weekday: "long", day: "numeric", month: "long", year: "numeric" }) : "ohne Datum" : monthLabel;
+  const step = () => {
+    if (pos >= list.length) { gridObs && gridObs.disconnect(); return; }
+    let html = "", n = 0;
+    while (pos < list.length && n < 400) {
+      if (key) {
+        const k = key(list[pos]);
+        let end = pos;
+        while (end < list.length && key(list[end]) === k) end++;
+        html += `<section><h2>${esc(label(k))}<small>${num(end - pos)}</small></h2><div class="g">${list.slice(pos, end).map((r, j) => cell(r, pos + j)).join("")}</div></section>`;
+        n += end - pos; pos = end;
+      } else {
+        const end = Math.min(list.length, pos + 400);
+        html += `<div class="g">${list.slice(pos, end).map((r, j) => cell(r, pos + j)).join("")}</div>`;
+        n += end - pos; pos = end;
+      }
+    }
+    gr.insertAdjacentHTML("beforeend", html);
+    observe(gr);
+  };
+  step();
+  gridObs = new IntersectionObserver(es => { if (es[0].isIntersecting) step(); }, { rootMargin: "2000px" });
+  gridObs.observe($("#more", box));
+  gr.onclick = e => { const c = e.target.closest(".c"); if (c) openLb(+c.dataset.i); };
+}
+
+// ---------------------------------------------------------------- Seiten ----
+function yearsOf(list) {
+  const m = new Map();
+  list.forEach(r => { const y = (r[2] || "").slice(0, 4); m.set(y, (m.get(y) || 0) + 1); });
+  return [...m].sort((a, b) => a[0] < b[0] ? 1 : -1);
+}
+const P = {
+  start() {
+    side("start");
+    const all = filt(D.byDate);
+    const md = NOW.toISOString().slice(5, 10);
+    const today = all.filter(r => r[2] && r[2].slice(5, 10) === md && r[2].slice(0, 4) < String(NOW.getFullYear()));
+    const vids = D.recs.filter(r => r[1] === "v").length;
+    main().innerHTML = `<h1>Übersicht <small>Stand der Sicherung: ${esc(D.generated.replace("T", " "))}</small></h1>
+      <div class="stats"><div class="stat"><b>${num(D.total - vids)}</b><small>Fotos</small></div><div class="stat"><b>${num(vids)}</b><small>Videos</small></div>
+      <div class="stat"><b>${num(Object.keys(D.pano).length)}</b><small>360°-Fotos</small></div><div class="stat"><b>${num(D.albums.length)}</b><small>Alben</small></div>
+      <div class="stat"><b>${num(D.events.length)}</b><small>Ereignisse</small></div><div class="stat"><b>${num(D.persons.length)}</b><small>Personen</small></div>
+      <div class="stat"><b>${num(D.places.length)}</b><small>Orte</small></div></div>
+      <h1 style="margin-top:22px">An diesem Tag <small>${NOW.toLocaleDateString("de-DE", { day: "numeric", month: "long" })} in früheren Jahren</small></h1><div id="today"></div>
+      <h1 style="margin-top:22px">Zuletzt <small>die neuesten Aufnahmen</small></h1><div id="recent"></div>`;
+    if (today.length) grid($("#today"), today, { group: "day" }); else $("#today").innerHTML = '<div class="muted">Heute vor Jahren keine Aufnahmen.</div>';
+    const recent = all.slice(0, 120);
+    const box = $("#recent");
+    box.innerHTML = `<div class="g">${recent.map((r, i) => cell(r, i)).join("")}</div>`;
+    observe(box);
+    box.onclick = e => { const c = e.target.closest(".c"); if (c) { current = recent; openLb(+c.dataset.i); } };
+  },
+  fotos(params) {
+    const list = filt(D.byDate);
+    side("fotos", yearsOf(list));
+    main().innerHTML = `<h1>Fotos <small>${num(list.length)} · neueste zuerst</small></h1><div id="newer"></div><div id="g"></div>`;
+    let start = 0;
+    const zu = params.get("zu");
+    if (zu != null) {
+      start = zu === "" ? list.findIndex(r => !r[2]) : list.findIndex(r => r[2] && r[2].slice(0, zu.length) <= zu);
+      if (start < 0) start = 0;
+      // auf Monatsanfang zurück, damit die Überschrift stimmt
+      while (start > 0 && monthKey(list[start - 1]) === monthKey(list[start])) start--;
+    }
+    if (start > 0) $("#newer").innerHTML = `<a href="#/fotos" class="muted">↑ neuere Aufnahmen (${num(start)}) anzeigen</a>`;
+    grid($("#g"), list, { group: "month", start });
+  },
+  kalender() {
+    side("kalender");
+    const list = filt(D.byDate).filter(r => r[2]);
+    const cal = new Map();
+    for (const r of list) { const k = r[2].slice(0, 7); const c = cal.get(k); if (c) c.n++; else cal.set(k, { n: 1, cover: r[0] }); }
+    const evs = new Map();
+    D.events.forEach(e => { if (!e[2]) return; for (let d = e[2].slice(0, 7); d <= (e[3] || e[2]).slice(0, 7); d = nextMonth(d)) (evs.get(d) || evs.set(d, []).get(d)).push(e); });
+    const years = [...new Set([...cal.keys()].map(k => k.slice(0, 4)))].sort().reverse();
+    let html = "";
+    for (const y of years) {
+      html += `<div class="yr">${y}</div>`;
+      for (let m = 1; m <= 12; m++) {
+        const k = y + "-" + String(m).padStart(2, "0"), c = cal.get(k), ev = evs.get(k) || [];
+        if (!c) { html += `<div class="mo empty"><span class="m">${SHORT[m - 1]}</span></div>`; continue; }
+        html += `<a class="mo" href="${ev.length === 1 ? "#/ereignis/" + ev[0][0] : "#/fotos?zu=" + k}" title="${MONTHS[m - 1]} ${y}: ${num(c.n)}${ev.length ? " – " + esc(ev.map(e => e[1]).join(", ")) : ""}">
+          ${imgTag(c.cover)}<span class="m">${SHORT[m - 1]}</span><span class="n">${num(c.n)}</span>${ev.length ? `<span class="ev">${esc(ev.map(e => e[1]).join(" · "))}</span>` : ""}</a>`;
+      }
+    }
+    main().innerHTML = `<h1>Kalender <small>Monat anklicken zum Ansehen</small></h1><div class="cal">${html}</div>`;
+    observe(main());
+  },
+  alben() {
+    side("alben");
+    const evCount = e => D.byDate.filter(r => inEvent(r, e)).length;
+    const top = D.albums.filter(a => a[2] == null && albumTotal(a));
+    main().innerHTML = `<h1>Ereignisse <small>${D.events.length}</small></h1>
+      <div class="cards">${D.events.map(e => `<a class="card" href="#/ereignis/${e[0]}">${e[4] ? imgTag(e[4]) : "<img alt=''>"}<div>${esc(e[1])}<small>${range(e[2], e[3])} · ${num(evCount(e))}</small></div></a>`).join("") || '<span class="muted">Keine Ereignisse.</span>'}</div>
+      <h1 style="margin-top:26px">Alben <small>${D.albums.filter(a => albumTotal(a)).length}</small></h1>
+      <div class="cards">${top.map(albumCard).join("") || '<span class="muted">Keine Alben.</span>'}</div>`;
+    observe(main());
+  },
+  album(params, id) {
+    side("alben");
+    const a = D.albums.find(x => x[0] === +id);
+    if (!a) return notFound();
+    const parent = D.albums.find(x => x[0] === a[2]);
+    const kids = D.albums.filter(x => x[2] === a[0] && albumTotal(x));
+    const list = filt(a[3].map(i => BY.get(i)).filter(Boolean));
+    main().innerHTML = `<div class="crumbs"><a href="#/alben">Alben</a>${parent ? ` › <a href="#/album/${parent[0]}">${esc(parent[1])}</a>` : ""} ›</div>
+      <h1>${esc(a[1])} <small>${num(albumTotal(a))}</small></h1>${a[5] ? `<p class="muted">${esc(a[5])}</p>` : ""}
+      ${kids.length ? `<div class="cards" style="margin-bottom:14px">${kids.map(albumCard).join("")}</div>` : ""}<div id="g"></div>`;
+    observe(main());
+    if (list.length || !kids.length) grid($("#g"), list, { group: "month" });
+  },
+  ereignis(params, id) {
+    side("alben");
+    const e = D.events.find(x => x[0] === +id);
+    if (!e) return notFound();
+    const list = filt(D.byDate.filter(r => inEvent(r, e)));
+    main().innerHTML = `<div class="crumbs"><a href="#/alben">Ereignisse</a> ›</div><h1>${esc(e[1])} <small>${range(e[2], e[3])} · ${num(list.length)}</small></h1><div id="g"></div>`;
+    grid($("#g"), list, { group: "day" });
+  },
+  ordner(params) {
+    side("ordner");
+    const path = params.get("p") || "";
+    const pre = path ? path + "/" : "";
+    const subs = new Map();
+    const here = [];
+    const fi = new Map(D.folders.map((f, i) => [i, f]));
+    const counts = new Map();
+    const list = filt(D.byDate);
+    for (const r of list) {
+      const f = fi.get(r[4]) || "";
+      if (f === path) { here.push(r); continue; }
+      if (pre && !f.startsWith(pre)) continue;
+      const seg = (pre ? f.slice(pre.length) : f).split("/")[0];
+      const c = counts.get(seg); if (c) c.n++; else counts.set(seg, { n: 1, cover: r[0] });
+    }
+    const crumbs = path ? path.split("/").map((s, i, a) => `<a href="#/ordner?p=${encodeURIComponent(a.slice(0, i + 1).join("/"))}">${esc(s)}</a>`).join(" › ") : "";
+    main().innerHTML = `<div class="crumbs"><a href="#/ordner">Ordner</a>${crumbs ? " › " + crumbs : ""}</div><h1>${esc(path.split("/").pop() || "Ordner")}</h1>
+      <div class="cards">${[...counts].sort((a, b) => a[0].localeCompare(b[0], "de", { numeric: true })).map(([s, c]) => `<a class="card" href="#/ordner?p=${encodeURIComponent(pre + s)}">${imgTag(c.cover)}<div>📁 ${esc(s)}<small>${num(c.n)}</small></div></a>`).join("")}</div>
+      ${here.length ? `<h1 style="margin-top:20px"><small>${num(here.length)} in diesem Ordner</small></h1><div id="g"></div>` : ""}`;
+    observe(main());
+    if (here.length) grid($("#g"), here, { group: "month" });
+  },
+  personen() {
+    side("personen");
+    main().innerHTML = `<h1>Personen <small>${D.persons.length}</small></h1><div class="cards">${D.persons.map(p => {
+      const cover = D.byDate.find(r => p[2].includes(r[0]));
+      return `<a class="card round" href="#/person/${p[0]}">${cover ? imgTag(cover[0]) : "<img alt=''>"}<div>${esc(p[1])}<small>${num(p[2].length)}</small></div></a>`;
+    }).join("")}</div>`;
+    observe(main());
+  },
+  person(params, id) {
+    side("personen");
+    const p = D.persons.find(x => x[0] === +id);
+    if (!p) return notFound();
+    const set = new Set(p[2]);
+    const list = filt(D.byDate.filter(r => set.has(r[0])));
+    main().innerHTML = `<div class="crumbs"><a href="#/personen">Personen</a> ›</div><h1>${esc(p[1])} <small>${num(list.length)}</small></h1><div id="g"></div>`;
+    grid($("#g"), list, { group: "month" });
+  },
+  favoriten() {
+    side("favoriten");
+    const list = filt(D.byDate.filter(r => r[8] & 1));
+    main().innerHTML = `<h1>Favoriten <small>${num(list.length)}</small></h1><div id="g"></div>`;
+    grid($("#g"), list, { group: "month" });
+  },
+  suche(params) {
+    side("fotos");
+    const raw = params.get("q") || "";
+    if ($("#q").value !== raw) $("#q").value = raw;
+    const toks = raw.toLowerCase().split(/\s+/).filter(Boolean);
+    if (!D.text) D.text = new Map(D.recs.map(r => [r[0], [pathOf(r), D.places[r[10]] || "", D.cams[r[9]] || "", D.kw[r[0]] || "",
+      (D.personsOf.get(r[0]) || []).join(" "), (D.albumsOf.get(r[0]) || []).join(" "), r[2] || ""].join(" ").toLowerCase()]));
+    // Ereignisnamen: Treffer zählen über den Zeitraum
+    const evHit = D.events.filter(e => toks.every(t => e[1].toLowerCase().includes(t)));
+    const list = filt(D.byDate.filter(r => toks.every(t => D.text.get(r[0]).includes(t)) || evHit.some(e => inEvent(r, e))));
+    main().innerHTML = `<h1>Suche „${esc(raw)}“ <small>${num(list.length)} Treffer</small></h1><div id="g"></div>`;
+    grid($("#g"), list, { group: "month" });
+  },
+  karte() {
+    side("karte");
+    main().innerHTML = `<h1>Karte <small>lädt …</small></h1><div id="map"></div>`;
+    loadLeaflet().then(() => {
+      const list = filt(D.byDate).filter(r => r.length > 13);
+      $("h1 small", main()).textContent = num(list.length) + " Fotos mit Ort";
+      const map = L.map("map").setView([51, 10], 5);
+      L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+      const cl = L.markerClusterGroup({ chunkedLoading: true });
+      current = list;
+      list.forEach((r, i) => { const m = L.marker([r[12], r[13]]); m.on("click", () => { current = list; openLb(i); }); cl.addLayer(m); });
+      map.addLayer(cl);
+      if (list.length) map.fitBounds(cl.getBounds(), { maxZoom: 12 });
+    }).catch(() => { main().innerHTML += '<div class="empty">Kartenbausteine (Leaflet) ließen sich nicht laden – ohne Internet geht die Karte nicht.</div>'; });
+  },
+};
+// Alben wie in FotoArchiv: Anzahl inklusive Unteralben, Titelbild sonst vom ersten Unteralbum
+function albumTotal(a) { return a[3].length + D.albums.filter(x => x[2] === a[0]).reduce((n, k) => n + albumTotal(k), 0); }
+function albumCover(a) { return a[4] || (D.albums.filter(x => x[2] === a[0]).map(albumCover).find(Boolean)) || null; }
+const albumCard = a => `<a class="card" href="#/album/${a[0]}">${albumCover(a) ? imgTag(albumCover(a)) : "<img alt=''>"}<div>${esc(a[1])}<small>${num(albumTotal(a))}</small></div></a>`;
+function nextMonth(k) { let y = +k.slice(0, 4), m = +k.slice(5, 7) + 1; if (m > 12) { m = 1; y++; } return y + "-" + String(m).padStart(2, "0"); }
+const inEvent = (r, e) => r[2] && r[2].slice(0, 10) >= (e[2] || "").slice(0, 10) && r[2].slice(0, 10) <= (e[3] || e[2] || "").slice(0, 10);
+const range = (a, b) => { const f = d => d ? new Date(d.slice(0, 10) + "T12:00").toLocaleDateString("de-DE", { day: "numeric", month: "short", year: "numeric" }) : ""; return !b || a.slice(0, 10) === b.slice(0, 10) ? f(a) : f(a) + " – " + f(b); };
+function notFound() { main().innerHTML = '<div class="empty">Nicht gefunden.</div>'; }
+function loadLeaflet() {
+  if (window.L && L.markerClusterGroup) return Promise.resolve();
+  const css = href => new Promise((ok, bad) => { const l = document.createElement("link"); l.rel = "stylesheet"; l.href = href; l.onload = ok; l.onerror = bad; document.head.appendChild(l); });
+  const js = src => new Promise((ok, bad) => { const s = document.createElement("script"); s.src = src; s.onload = ok; s.onerror = bad; document.head.appendChild(s); });
+  const base = "https://unpkg.com/";
+  return Promise.all([css(base + "leaflet@1.9.4/dist/leaflet.css"), css(base + "leaflet.markercluster@1.5.3/dist/MarkerCluster.css"),
+    css(base + "leaflet.markercluster@1.5.3/dist/MarkerCluster.Default.css")])
+    .then(() => js(base + "leaflet@1.9.4/dist/leaflet.js"))
+    .then(() => js(base + "leaflet.markercluster@1.5.3/dist/leaflet.markercluster.js"));
+}
+
+let lastRoute = "";
+function route() {
+  if (!D) return;
+  closeLb(true);
+  const h = location.hash || "#/start";
+  const [p, qs] = h.slice(2).split("?");
+  const [name, arg] = p.split("/");
+  const params = new URLSearchParams(qs || "");
+  const fn = P[name] || P.start;
+  if (name !== "suche" && $("#q")) $("#q").value = "";
+  const keepScroll = lastRoute === h;
+  lastRoute = h;
+  fn(params, arg ? decodeURIComponent(arg) : undefined);
+  if (!keepScroll) scrollTo(0, 0);
+  const bild = +params.get("bild");  // direkter Link auf ein Bild: …&bild=<id> (&info=1 mit Info-Leiste)
+  if (bild) {
+    if (params.get("info") === "1") showInfo = true;
+    let i = current.findIndex(r => r[0] === bild);
+    if (i < 0 && BY.has(bild)) { current = [BY.get(bild)]; i = 0; }
+    if (i >= 0) openLb(i);
+  }
+}
+window.addEventListener("hashchange", route);
+
+// ---------------------------------------------------------------- große Ansicht ----
+let lbi = -1, showInfo = false;
+try { showInfo = localStorage.getItem(LS + "|info") === "1"; } catch (_) {}
+const fmt = d => { if (!d) return "ohne Datum"; const t = new Date(d.replace(" ", "T")); return isNaN(t) ? d : t.toLocaleString("de-DE", { weekday: "short", day: "numeric", month: "long", year: "numeric", hour: "2-digit", minute: "2-digit" }); };
+function info(r) {
+  const persons = D.personsOf.get(r[0]) || [], albums = D.albumsOf.get(r[0]) || [];
+  const evs = D.events.filter(e => inEvent(r, e));
+  const row = (k, v) => v ? `<dt>${k}</dt><dd>${v}</dd>` : "";
+  return `<b>${esc(fmt(r[2]))}</b><dl style="margin-top:10px">
+    ${row("Art", r[1] === "v" ? "Video" + (r[11] ? " · " + dur(r[11]) : "") : (r[8] & 2) ? "360°-Foto" : "Foto")}
+    ${row("Größe", r[6] && r[7] ? r[6] + " × " + r[7] : "")}
+    ${row("Kamera", D.cams[r[9]] ? `<a href="#/suche?q=${encodeURIComponent(D.cams[r[9]])}">${esc(D.cams[r[9]])}</a>` : "")}
+    ${row("Ort", D.places[r[10]] ? `<a href="#/suche?q=${encodeURIComponent(D.places[r[10]])}">${esc(D.places[r[10]])}</a>` : r.length > 13 ? r[12].toFixed(4) + ", " + r[13].toFixed(4) : "")}
+    ${row("Personen", persons.map(p => `<a class="chip" href="#/person/${D.persons.find(x => x[1] === p)[0]}">${esc(p)}</a>`).join(""))}
+    ${row("Alben", albums.map(a => `<a class="chip" href="#/album/${D.albums.find(x => x[1] === a)[0]}">${esc(a)}</a>`).join(""))}
+    ${row("Ereignis", evs.map(e => `<a class="chip" href="#/ereignis/${e[0]}">${esc(e[1])}</a>`).join(""))}
+    ${row("Stichwörter", D.kw[r[0]] ? esc(D.kw[r[0]]) : "")}
+    ${row("Datei", `<a href="#/ordner?p=${encodeURIComponent(D.folders[r[4]] || "")}">${esc(D.folders[r[4]] || "")}</a>/${esc(r[5])}`)}
+    ${row("Favorit", r[8] & 1 ? "★" : "")}</dl>`;
+}
+let pano = null;
+async function openLb(i) {
+  if (i < 0 || i >= current.length) return;
+  lbi = i;
+  const r = current[i];
+  const [id, kind, date, mode] = r;
+  const lb = $("#lb");
+  lb.classList.add("on");
+  lb.classList.toggle("info", showInfo);
+  $("#lbt").textContent = fmt(date) + " · " + r[5] + " · " + (i + 1) + "/" + current.length;
+  $("#lbinf").innerHTML = info(r);
+  const orig = await sign(CFG.prefix + pathOf(r));
+  $("#lbo").href = orig;
+  $("#lbnote").textContent = "";
+  const m = $("#lbm");
+  const thumb = await srcFor(thumbKey(id)).catch(() => "");
+  if (lbi !== i) return;
+  pano = null;
+  if (kind === "v" && (mode === "o" || (mode === "x" && /\.(mp4|m4v|mov)$/i.test(r[5])))) m.innerHTML = `<video controls autoplay playsinline poster="${thumb}" src="${orig}"></video>`;
+  else if ((r[8] & 2) && window.WebGLRenderingContext) {
+    m.innerHTML = `<img alt="" src="${thumb}">`;
+    const src = mode === "o" ? orig : mode === "p" ? await sign(CFG.view + "p/" + id + ".jpg") : thumb;
+    try {
+      if (typeof PanoViewer === "undefined") await loadScript(CFG.view + "pano.js");
+      if (lbi !== i) return;
+      const wrap = document.createElement("div");
+      wrap.style.cssText = "position:absolute;inset:0";
+      m.appendChild(wrap);  // muss hängen, sonst übernimmt der Betrachter das Bild nicht
+      const pv = new PanoViewer(wrap, src, D.pano[id] || {});
+      pv.onload = () => { if (lbi === i) { const lo = $("img", m); if (lo) lo.remove(); $("#lbnote").textContent = "360° – ziehen zum Umsehen, Mausrad zoomt"; } };
+      pv.onerror = () => { wrap.remove(); };
+      pano = pv;
+    } catch (e) { /* ohne WebGL: flaches Bild bleibt */ }
+  } else {
+    m.innerHTML = `<img alt="" src="${thumb}">`;
+    if (kind === "v") $("#lbnote").textContent = "Dieses Videoformat spielt der Browser nicht – „Original“ lädt die Datei.";
+    const big = mode === "o" ? orig : mode === "p" ? await sign(CFG.view + "p/" + id + ".jpg")
+      : mode === "x" && kind === "p" ? await srcFor("enc:" + CFG.view + "x/" + PRIV.tok[id] + "p.bin").catch(() => null) : null;
+    if (big && lbi === i) { const im = new Image(); im.onload = () => { if (lbi === i) { m.innerHTML = ""; m.appendChild(im); } }; im.src = big; }
+  }
+  for (const k of [i + 1, i - 1]) if (current[k] && current[k][3] !== "x") sign(thumbKey(current[k][0])).then(u => { if (current[k] && current[k][1] === "p") (new Image()).src = u; });
+}
+function closeLb(silent) { $("#lb").classList.remove("on"); $("#lbm").innerHTML = ""; lbi = -1; pano = null; }
+$("#lbx").onclick = () => closeLb();
+$("#lbp").onclick = () => openLb(lbi - 1);
+$("#lbn").onclick = () => openLb(lbi + 1);
+$("#lbi").onclick = () => { showInfo = !showInfo; try { localStorage.setItem(LS + "|info", showInfo ? "1" : "0"); } catch (_) {} $("#lb").classList.toggle("info", showInfo); };
+$("#lbinf").addEventListener("click", e => { if (e.target.closest("a")) closeLb(); });
+document.addEventListener("keydown", e => {
+  if (lbi < 0) return;
+  if (e.key === "Escape") closeLb();
+  else if (e.key === "ArrowLeft") openLb(lbi - 1);
+  else if (e.key === "ArrowRight") openLb(lbi + 1);
+  else if (e.key === "i") $("#lbi").click();
+});
+let tx = null;
+$("#lbm").addEventListener("touchstart", e => { tx = pano ? null : e.touches[0].clientX; }, { passive: true });
+$("#lbm").addEventListener("touchend", e => { if (tx === null) return; const dx = e.changedTouches[0].clientX - tx; if (Math.abs(dx) > 60) openLb(lbi + (dx < 0 ? 1 : -1)); tx = null; });
+
+// ---------------------------------------------------------------- private Fotos (verschlüsselt, app/aesctr.py) ----
+// Format: nonce(16) | AES-256-CTR | HMAC-SHA256(nonce|geheimtext); Schlüssel = PBKDF2-SHA256(Passwort, Salz) → 64 Bytes.
+let PRIV = null, PK = null;
+const blobUrls = new Map();
+const unhex = h => new Uint8Array(h.match(/../g).map(x => parseInt(x, 16)));
+async function privKeys(pw) {
+  const base = await crypto.subtle.importKey("raw", enc.encode(pw), "PBKDF2", false, ["deriveBits"]);
+  const bits = new Uint8Array(await crypto.subtle.deriveBits({ name: "PBKDF2", hash: "SHA-256", salt: unhex(D.priv.salt), iterations: D.priv.iter }, base, 512));
+  return { ek: await crypto.subtle.importKey("raw", bits.slice(0, 32), "AES-CTR", false, ["decrypt"]),
+           mk: await crypto.subtle.importKey("raw", bits.slice(32), { name: "HMAC", hash: "SHA-256" }, false, ["verify"]) };
+}
+async function unseal(buf) {
+  const b = new Uint8Array(buf), nonce = b.slice(0, 16), ct = b.slice(16, b.length - 32), tag = b.slice(b.length - 32);
+  if (!await crypto.subtle.verify("HMAC", PK.mk, tag, b.slice(0, b.length - 32))) throw new Error("Passwort falsch");
+  return new Uint8Array(await crypto.subtle.decrypt({ name: "AES-CTR", counter: nonce, length: 128 }, PK.ek, ct));
+}
+async function srcFor(key) {
+  if (!key.startsWith("enc:")) return sign(key);
+  if (blobUrls.has(key)) return blobUrls.get(key);
+  const p = (async () => {
+    const r = await fetch(await sign(key.slice(4)));
+    if (!r.ok) throw new Error("HTTP " + r.status);
+    return URL.createObjectURL(new Blob([await unseal(await r.arrayBuffer())], { type: "image/jpeg" }));
+  })();
+  blobUrls.set(key, p);
+  return p;
+}
+function privDialog(msg) {
+  const d = document.createElement("div");
+  d.style.cssText = "position:fixed;inset:0;background:rgba(0,0,0,.7);z-index:20;display:flex;align-items:center;justify-content:center";
+  d.innerHTML = `<form class="login" style="margin:0"><b>🔒 Private Fotos</b><p class="muted">${num(D.priv.n)} private Einträge. Passwort wie „Privat“ in FotoArchiv.
+    Es bleibt nur in diesem Fenster – nach dem Neuladen ist wieder alles gesperrt.</p>
+    <input id="ppw" type="password" autocomplete="off"><div class="err">${esc(msg || "")}</div>
+    <button class="on" type="submit">Entsperren</button> <button type="button" id="pcancel">Abbrechen</button></form>`;
+  document.body.appendChild(d);
+  $("#ppw", d).focus();
+  $("#pcancel", d).onclick = () => d.remove();
+  $("form", d).onsubmit = async e => {
+    e.preventDefault();
+    $(".err", d).textContent = "wird entschlüsselt …";
+    try { await privUnlock($("#ppw", d).value); d.remove(); }
+    catch (x) { PK = null; $(".err", d).textContent = x.message.includes("Passwort") ? "Passwort falsch." : "Ging nicht: " + x.message; }
+  };
+}
+async function privUnlock(pw) {
+  PK = await privKeys(pw);
+  const raw = await unseal(Uint8Array.from(atob(D.priv.blob), c => c.charCodeAt(0)).buffer);
+  const txt = await new Response(new Blob([raw]).stream().pipeThrough(new DecompressionStream("gzip"))).text();
+  const P = JSON.parse(txt);
+  const idx = (list, v) => { if (!v) return -1; let i = list.indexOf(v); if (i < 0) { list.push(v); i = list.length - 1; } return i; };
+  for (const r of P.recs) {
+    r[4] = idx(D.folders, r[4]); if (r[4] < 0) r[4] = idx(D.folders, "-");
+    r[9] = idx(D.cams, r[9]); r[10] = idx(D.places, r[10]);
+    D.recs.push(r); BY.set(r[0], r);
+  }
+  Object.assign(D.kw, P.kw); Object.assign(D.pano, P.pano);
+  for (const [aid, ids] of Object.entries(P.alb)) { const a = D.albums.find(x => x[0] === +aid); if (a) a[3].push(...ids); }
+  P.albums.forEach(a => { a[1] = "🔒 " + a[1]; D.albums.push(a); });
+  for (const [pid, ids] of Object.entries(P.pers)) {
+    const p = D.persons.find(x => x[0] === +pid);
+    if (p) p[2].push(...ids); else D.persons.push([+pid, P.pnames[pid], ids]);
+  }
+  PRIV = { tok: P.tok };
+  D.total += P.recs.length;
+  D.byDate = D.recs.slice().sort((a, b) => a[2] < b[2] ? 1 : a[2] > b[2] ? -1 : b[0] - a[0]);
+  D.personsOf = new Map(); D.persons.forEach(p => p[2].forEach(id => { (D.personsOf.get(id) || D.personsOf.set(id, []).get(id)).push(p[1]); }));
+  D.albumsOf = new Map(); D.albums.forEach(a => a[3].forEach(id => { (D.albumsOf.get(id) || D.albumsOf.set(id, []).get(id)).push(a[1]); }));
+  D.text = null;
+  frame(); lastRoute = ""; route();
+}
+
+// ---------------------------------------------------------------- Anmelden / Start ----
+function loginForm(msg) {
+  app.innerHTML = `<form class="login"><h2 style="margin-top:0;position:static">FotoArchiv – Sicherung</h2>
+    <p class="muted">${esc(CFG.name || CFG.bucket)} · ${esc(CFG.host)}<br>Zugangsschlüssel des Buckets eingeben. Sie bleiben nur in diesem Browser.</p>
+    <label>Zugangsschlüssel<input id="ak" autocomplete="off" spellcheck="false"></label>
+    <label>Geheimer Schlüssel<input id="sk" type="password" autocomplete="off" spellcheck="false"></label>
+    <div class="err">${esc(msg || "")}</div><button class="on" type="submit">Anmelden</button></form>`;
+  $("form").onsubmit = e => {
+    e.preventDefault();
+    KEYS = { ak: $("#ak").value.trim(), sk: $("#sk").value.trim() };
+    signingKey = null; signed.clear();
+    start(true);
+  };
+}
+async function start(remember) {
+  if (!KEYS) return loginForm();
+  app.innerHTML = '<div class="load">Archiv wird geladen …<div class="bar2"><i></i></div><small>einmalig etwa 2–3 MB</small></div>';
+  try {
+    await loadAll();
+  } catch (e) {
+    KEYS = null;
+    try { localStorage.removeItem(LS); } catch (_) {}
+    return loginForm("Anmeldung oder Verbindung fehlgeschlagen – Schlüssel prüfen.");
+  }
+  if (remember) try { localStorage.setItem(LS, JSON.stringify(KEYS)); } catch (_) {}
+  frame();
+  route();
+}
+if (location.protocol !== "file:" && !window.crypto?.subtle) app.innerHTML = '<div class="empty">Dieser Browser kann die Anmeldung nicht berechnen (nur über https möglich).</div>';
+else start(false);
+</script></body></html>

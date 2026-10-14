@@ -326,6 +326,28 @@ def open_image(path, kind, max_side=None, orient_override=None, userrot=0, edit=
     return im, exif, xmp, size, applied
 
 
+def _bcd(b):
+    return (b >> 4) * 10 + (b & 15)
+
+
+def avchd_date(path, limit=8 << 20):
+    """Aufnahmezeit eines AVCHD-Camcorders (MTS): SEI „MDPM“ im H.264-Strom, Tags 0x18/0x19 (BCD, lokale Zeit)."""
+    try:
+        with open(path, "rb") as f:
+            data = f.read(limit)
+        i = data.find(b"MDPM")
+        if i < 0:
+            return None
+        tags = {data[i + 5 + 5 * k]: data[i + 6 + 5 * k:i + 10 + 5 * k] for k in range(data[i + 4])}
+        a, b = tags.get(0x18), tags.get(0x19)
+        if not (a and b and len(a) == 4 and len(b) == 4):
+            return None
+        return parse_dt("%04d-%02d-%02d %02d:%02d:%02d" % (_bcd(a[1]) * 100 + _bcd(a[2]), _bcd(a[3]), _bcd(b[0]),
+                                                           _bcd(b[1]), _bcd(b[2]), _bcd(b[3])))
+    except (OSError, IndexError):
+        return None
+
+
 def rotate_cw(im, deg):
     deg %= 360
     return im.transpose({90: Image.ROTATE_270, 180: Image.ROTATE_180, 270: Image.ROTATE_90}[deg]) if deg else im
@@ -503,6 +525,24 @@ def _iso6709(s):
     return None
 
 
+def _first_frame(av, c, vs, limit=300):
+    """Erstes dekodierbares Bild; kaputte Pakete werden übersprungen (reparierte Aufnahmen)."""
+    for n, packet in enumerate(c.demux(vs)):
+        if n > limit:
+            break
+        try:
+            frames = packet.decode()
+        except av.error.InvalidDataError:
+            continue
+        if frames:
+            return frames[0]
+    try:
+        frames = vs.decode(None)  # Decoder leeren (Bilder mit Verzögerung)
+        return frames[0] if frames else None
+    except Exception:
+        return None
+
+
 def video_frame(path):
     import av
 
@@ -519,7 +559,10 @@ def video_frame(path):
         elif vs.duration and vs.time_base:
             meta["duration"] = float(vs.duration * vs.time_base)
         apple_dt = md.get("com.apple.quicktime.creationdate")
-        if apple_dt:
+        cam_dt = avchd_date(path) if path.lower().endswith((".mts", ".m2ts")) else None
+        if cam_dt:  # AVCHD-Camcorder: Aufnahmezeit im Videostrom – zuverlässiger als Mylio/Dateidatum
+            meta["dt"], meta["cam_dt"] = cam_dt, True
+        elif apple_dt:
             meta["dt"] = parse_dt(apple_dt)
         elif md.get("creation_time"):
             try:
@@ -541,9 +584,13 @@ def video_frame(path):
                 c.seek(int(target / vs.time_base), stream=vs, any_frame=False, backward=True)
             except Exception:
                 pass
-        frame = None
-        for frame in c.decode(vs):
-            break
+        frame = _first_frame(av, c, vs)
+        if frame is None and target > 0:  # nach dem Springen kein Bild (z. B. kaputter Anfang) – von vorn versuchen
+            try:
+                c.seek(0, stream=vs)
+                frame = _first_frame(av, c, vs)
+            except Exception:
+                pass
         if frame is None:
             raise ValueError("kein Videobild")
         im = frame.to_image()
@@ -784,13 +831,16 @@ def process(task):
                     if other and other[:10] == dt[:10]:
                         dt = other
                 break
-        if xmp.get("undated") == "true":
+        # Mylio "undatiert" – außer bei Videos mit Datum im Dateinamen (dort hat der Nutzer es selbst hineingeschrieben)
+        # oder mit Aufnahmezeit der Kamera im Videostrom (AVCHD)
+        if xmp.get("undated") == "true" and not (kind == "video" and (src == "name" or meta.get("cam_dt"))):
             dt, src = None, "undated"
         elif not dt:
             dt = datetime.datetime.fromtimestamp(os.path.getmtime(path)).strftime("%Y-%m-%d %H:%M:%S")
             src = "file"
         meta["taken"], meta["taken_src"] = dt, src
         meta.pop("dt", None)
+        meta.pop("cam_dt", None)
         if "lat" in ex:
             meta["lat"], meta["lon"] = ex["lat"], ex["lon"]
         elif xmp.get("gps_lat") and xmp.get("gps_lon"):

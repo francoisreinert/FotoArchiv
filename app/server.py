@@ -789,6 +789,56 @@ def r_pano(h, p, iid):
     h.send_bytes(buf.getvalue(), "image/jpeg")
 
 
+MONTH_WORDS = {1: ("januar", "jan", "january", "jänner"), 2: ("februar", "feb", "february"), 3: ("märz", "maerz", "march", "mär"),
+               4: ("april", "apr"), 5: ("mai", "may"), 6: ("juni", "june", "jun"), 7: ("juli", "july", "jul"),
+               8: ("august", "aug"), 9: ("september", "sep", "sept"), 10: ("oktober", "october", "okt", "oct"),
+               11: ("november", "nov"), 12: ("dezember", "december", "dez", "dec")}
+
+
+def _name_date_warn(name, date):
+    """Hinweis, wenn der Dateiname einen anderen Monat nennt als das gelesene Datum (z. B. November_2008_09_02)."""
+    low = re.sub(r"[^a-zäöü]+", " ", name.lower()).split()
+    for m, words in MONTH_WORDS.items():
+        if any(w in low for w in words) and int(date[5:7]) != m:
+            return "Name nennt %s, gelesen wurde Monat %s" % (words[0].capitalize(), date[5:7])
+    return ""
+
+
+def r_namedates(h, p):
+    """Fotos ohne sicheres Datum, deren Dateiname ein Datum enthält – zum Prüfen und Übernehmen."""
+    import media
+
+    out = []
+    for iid, path, name, folder, src in db().execute(
+            "SELECT id, path, name, folder, taken_src FROM items WHERE kind IN ('photo','raw') AND usertaken IS NULL "
+            "AND COALESCE(hidden,0) NOT IN (1,2) AND (taken IS NULL OR taken_src IN ('undated','file')) "
+            "ORDER BY folder, name"):
+        d = media.date_from_name(path)
+        if d and not (locked(h) and is_blocked(h, iid)):
+            out.append({"id": iid, "name": name, "folder": folder, "date": d, "src": src, "warn": _name_date_warn(name, d)})
+    h.send_json(out)
+
+
+def r_namedates_apply(h, p):
+    import indexer
+    import media
+
+    ids = _visible_ids(h, _ids(h.body()))
+    c = db()
+    done = []
+    for iid in ids:
+        row = c.execute("SELECT path FROM items WHERE id=?", (iid,)).fetchone()
+        d = media.date_from_name(row[0]) if row else None
+        if d:
+            c.execute("UPDATE items SET taken=?, taken_src='name' WHERE id=?", (d, iid))
+            done.append(iid)
+    c.commit()
+    for k in range(0, len(done), 200):
+        indexer.rebuild_fts(c, done[k:k + 200])
+    _tree_cache.clear()
+    h.send_json({"ok": True, "count": len(done)})
+
+
 def r_panos_count(h, p):
     h.send_json({"count": db().execute("SELECT COUNT(*) FROM items WHERE pano <> '' AND COALESCE(hidden,0) != 2").fetchone()[0]})
 
@@ -2490,7 +2540,7 @@ def r_backup_settings(h, p):
 
     b = h.body()
     d = backup.load()
-    for k in ("target", "videos", "dups", "previews", "limit_mbit", "auto_hours", "workers", "mirror_deletes"):
+    for k in ("target", "videos", "dups", "previews", "limit_mbit", "auto_hours", "workers", "mirror_deletes", "view"):
         if k in b:
             d["backup"][k] = b[k]
     backup.save(d)
@@ -2524,6 +2574,51 @@ def r_backup_orphans(h, p):
         b = h.body()
         return _bk_call(h, lambda: {"ok": backup.start_prune(b["target"])})
     _bk_call(h, backup.orphans, p.get("target", ""))
+
+
+def r_backup_exposure(h, p):
+    """GET: Ist die Sicherung ohne Schlüssel lesbar? POST: Präfix für Anonyme sperren (Bucket-Richtlinie)."""
+    import backup
+
+    if h.command == "POST":
+        return _bk_call(h, backup.secure_prefix, h.body()["target"])
+    _bk_call(h, backup.exposure, p.get("target", ""))
+
+
+def r_backup_view(h, p):
+    """Archiv-Ansicht im Bucket: POST = jetzt aktualisieren, GET = signierter Link zur Seite."""
+    import archview
+
+    if h.command == "POST":
+        return _bk_call(h, lambda: {"ok": archview.start(h.body()["target"])})
+    def get():
+        import backup
+
+        t = backup.target(p.get("target", ""))
+        if backup.client(t).head(backup.prefix_of(t) + archview.VIEW_DIR + "index.html") is None:
+            st = backup.status()
+            pct = (" (Sicherung bei %d %%)" % (100 * st["bytes_done"] // st["bytes_total"])) if st.get("running") and st.get("bytes_total") else ""
+            return {"error": "Die Ansicht gibt es noch nicht – sie entsteht nach der laufenden Sicherung%s. "
+                             "Ohne laufende Sicherung: „Ansicht aktualisieren“." % pct}
+        return {"url": archview.link(t["id"])}
+    _bk_call(h, get)
+
+
+def r_backup_view_html(h, p):
+    """index.html zum lokalen Speichern (funktioniert auch ohne FotoArchiv)."""
+    import archview
+    import backup
+
+    try:
+        data = archview.page(backup.target(p.get("target", ""))).encode()
+    except KeyError:
+        return h.send_error(404)
+    h.send_response(200)
+    h.send_header("Content-Type", "text/html; charset=utf-8")
+    h.send_header("Content-Disposition", 'attachment; filename="FotoArchiv-Ansicht.html"')
+    h.send_header("Content-Length", str(len(data)))
+    h.end_headers()
+    h.wfile.write(data)
 
 
 def r_backup_browse(h, p):
@@ -2767,6 +2862,8 @@ ROUTES = [
     ("GET", r"/pano/(\d+)", r_pano),
     ("POST", r"/api/panos/scan", r_panos_scan),
     ("GET", r"/api/panos/count", r_panos_count),
+    ("GET", r"/api/namedates", r_namedates),
+    ("POST", r"/api/namedates/apply", r_namedates_apply),
     ("GET", r"/face/(\d+)", r_face_img),
     ("GET", r"/api/folders", r_folders),
     ("GET", r"/api/persons", r_persons),
@@ -2795,6 +2892,11 @@ ROUTES = [
     ("POST", r"/api/backup/stop", r_backup_stop),
     ("GET", r"/api/backup/status", r_backup_status),
     ("GET", r"/api/backup/browse", r_backup_browse),
+    ("GET", r"/api/backup/view", r_backup_view),
+    ("POST", r"/api/backup/view", r_backup_view),
+    ("GET", r"/api/backup/exposure", r_backup_exposure),
+    ("POST", r"/api/backup/exposure", r_backup_exposure),
+    ("GET", r"/api/backup/view/html", r_backup_view_html),
     ("GET", r"/api/backup/orphans", r_backup_orphans),
     ("POST", r"/api/backup/orphans", r_backup_orphans),
     ("POST", r"/api/backup/restore", r_backup_restore),

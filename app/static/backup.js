@@ -31,7 +31,12 @@ routes.sicherung = async function () {
       <div class="row"><label title="Erst beim endgültigen Löschen (Papierkorb leeren) – was nur im Papierkorb liegt, bleibt gesichert">
         <input type="checkbox" id="bk-mirror"${b.mirror_deletes ? " checked" : ""}> Endgültig Gelöschtes auch in der Sicherung löschen</label>
         <span class="muted">${b.mirror_deletes ? "" : "aus: Gelöschtes bleibt in der Sicherung (Schutz vor Versehen)"}</span></div>
-      <div id="bk-status"></div><div id="bk-orphans"></div>` : `<p>Noch kein Ziel eingerichtet – unten „+ Ziel hinzufügen“ (Amazon S3 oder eigener S3-Speicher wie StorageGRID, MinIO …).</p>`}
+      <div class="row"><label title="Vorschaubilder, große Ansichten und eine index.html im Bucket – zum Ansehen im Browser, auch ohne FotoArchiv">
+        <input type="checkbox" id="bk-view"${b.view ? " checked" : ""}> Archiv-Ansicht im Bucket pflegen</label>
+        <button id="bk-vopen" title="Signierter Link, 7 Tage gültig">🌐 Ansicht öffnen</button>
+        <button id="bk-vnow" title="Vorschaubilder, große Ansichten und Listen jetzt aktualisieren">Ansicht aktualisieren</button>
+        <a id="bk-vsave" href="#" title="Seite lokal speichern – funktioniert auch ohne FotoArchiv">index.html speichern</a></div>
+      <div id="bk-expo"></div><div id="bk-status"></div><div id="bk-orphans"></div>` : `<p>Noch kein Ziel eingerichtet – unten „+ Ziel hinzufügen“ (Amazon S3 oder eigener S3-Speicher wie StorageGRID, MinIO …).</p>`}
     </div>
     <div class="card"><h2>Ziele</h2>
       <div id="bk-targets">${cfg.targets.map(t => `<div class="bk-t"><b>${esc(t.name)}</b>
@@ -67,11 +72,23 @@ routes.sicherung = async function () {
   const saveSettings = () => api("/api/backup/settings", {
     target: $("#bk-target").value, videos: $("#bk-videos").checked, dups: $("#bk-dups").checked, previews: $("#bk-previews").checked,
     limit_mbit: +$("#bk-limit").value || 0, workers: +$("#bk-workers").value, auto_hours: +$("#bk-auto").value,
-    mirror_deletes: $("#bk-mirror").checked,
+    mirror_deletes: $("#bk-mirror").checked, view: $("#bk-view").checked,
   }).then(() => toast("Gespeichert"));
-  ["#bk-target", "#bk-videos", "#bk-dups", "#bk-previews", "#bk-limit", "#bk-workers", "#bk-auto", "#bk-mirror"].forEach(s => { const e = $(s, page); if (e) e.onchange = saveSettings; });
+  ["#bk-target", "#bk-videos", "#bk-dups", "#bk-previews", "#bk-limit", "#bk-workers", "#bk-auto", "#bk-mirror", "#bk-view"].forEach(s => { const e = $(s, page); if (e) e.onchange = saveSettings; });
   if (has) {
     renderBkStatus(st);
+    const tgt = () => $("#bk-target").value;
+    $("#bk-vsave", page).onclick = e => { e.preventDefault(); location.href = "/api/backup/view/html?target=" + encodeURIComponent(tgt()); };
+    $("#bk-vopen", page).onclick = async () => {
+      const r = await api("/api/backup/view?target=" + encodeURIComponent(tgt())).catch(e => ({ error: e.message }));
+      if (r.error) return toast(r.error, 8000);
+      window.open(r.url, "_blank");
+    };
+    $("#bk-vnow", page).onclick = async () => {
+      const r = await api("/api/backup/view", { target: tgt() }).catch(e => ({ error: e.message }));
+      if (r.error || !r.ok) return toast(r.error || "Es läuft schon eine Sicherung – die Ansicht wird danach aktualisiert, wenn der Haken gesetzt ist.", 9000);
+      pollBk();
+    };
     api("/api/backup/orphans?target=" + encodeURIComponent(b.target)).then(o => {
       const box = $("#bk-orphans");
       if (!box || !o.count) return;
@@ -88,6 +105,7 @@ routes.sicherung = async function () {
         pollBk();
       };
     }).catch(() => {});
+    renderExposure(b.target);
   }
 
   $("#bk-add", page).onclick = () => targetDialog();
@@ -135,9 +153,9 @@ function renderBkStatus(st) {
   const box = $("#bk-status");
   if (!box) return;
   const pct = st.bytes_total ? Math.min(100, 100 * st.bytes_done / st.bytes_total) : 0;
-  const what = { backup: "Sicherung", restore: "Wiederherstellen", catalog: "Katalog laden", prune: "Aufräumen" }[st.kind] || "Sicherung";
+  const what = { backup: "Sicherung", restore: "Wiederherstellen", catalog: "Katalog laden", prune: "Aufräumen", view: "Archiv-Ansicht" }[st.kind] || "Sicherung";
   if (st.running) {
-    box.innerHTML = `<div class="docscan"><b>${what} läuft – ${esc(st.phase)}</b>
+    box.innerHTML = `<div class="docscan"><b>${what} läuft – ${esc(st.phase)}</b>${st.files_total ? `<span class="bk-pct">${pct.toFixed(pct < 10 ? 1 : 0).replace(".", ",")} %</span>` : ""}
       ${st.files_total ? `<div class="progress"><i style="width:${pct.toFixed(1)}%"></i></div>
       ${bkNum(st.files_done)} von ${bkNum(st.files_total)} Dateien · ${bkGB(st.bytes_done)} von ${bkGB(st.bytes_total)}
       ${st.rate ? ` · ${(st.rate * 8 / 1e6).toLocaleString("de-DE", { maximumFractionDigits: 0 })} Mbit/s` : ""}${st.eta ? ` · noch ca. ${fmtEta(st.eta)}` : ""}
@@ -159,6 +177,31 @@ function renderBkStatus(st) {
   }
   if (st.running) bkTimer = setTimeout(pollBk, 2000);
 }
+// Ist die Sicherung ohne Schlüssel lesbar (Bucket-Richtlinie „Principal *“)? Dann deutlich warnen und Sperren anbieten.
+async function renderExposure(tid) {
+  const box = $("#bk-expo");
+  if (!box) return;
+  const e = await api("/api/backup/exposure?target=" + encodeURIComponent(tid)).catch(() => null);
+  if (!e || (!e.public_read && !e.public_list)) {
+    box.innerHTML = e ? `<div class="muted" style="margin:6px 0">🔒 Die Sicherung ist ohne Schlüssel nicht erreichbar – nur über signierte Links.</div>` : "";
+    return;
+  }
+  box.innerHTML = `<div class="docscan" style="border-color:var(--bad);margin:8px 0"><b style="color:var(--bad)">⚠ Deine Sicherung ist öffentlich</b>
+    <div style="margin:4px 0">Ohne Schlüssel kann jeder ${e.public_list ? "den Ordner „" + esc(e.prefix) + "“ auflisten und " : ""}jede Datei darin laden – auch private Fotos.
+    Grund ist eine Bucket-Richtlinie, die „jedem“ (Principal *) Lesen erlaubt.</div>
+    <div class="muted">„Sperren“ ändert nur diesen Ordner: Andere Dateien im Bucket bleiben so öffentlich wie bisher (z. B. ein Bucket-Browser),
+    signierte Links (Ansicht öffnen, Album-Webseiten) funktionieren weiter. Die bisherige Richtlinie wird vorher gesichert.</div>
+    <div class="row" style="margin-top:6px"><button id="bk-secure" class="danger">Ordner „${esc(e.prefix)}“ für Anonyme sperren</button></div></div>`;
+  $("#bk-secure").onclick = async () => {
+    if (!await confirmBox(`Ordner „${e.prefix}“ im Bucket für Zugriffe ohne Schlüssel sperren?`)) return;
+    const r = await api("/api/backup/exposure", { target: tid }).catch(x => ({ error: x.message }));
+    if (r.error) return toast(r.error, 10000);
+    toast(r.public_read || r.public_list ? "Richtlinie gesetzt, aber noch erreichbar – bitte melden" : "Gesperrt ✓ – nur noch mit Schlüssel bzw. signiertem Link", 8000);
+    renderExposure(tid);
+  };
+}
+
+
 async function pollBk() {
   clearTimeout(bkTimer);
   if (!location.hash.startsWith("#/sicherung")) return;

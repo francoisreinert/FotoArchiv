@@ -19,6 +19,12 @@ direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Foto
   und aus der Zeitleiste genommen; behalten, löschen oder zurück – endgültig Gelöschtes holt kein Import wieder
 - **Sicherung auf S3** (Amazon S3 oder eigener S3-Speicher wie StorageGRID/MinIO): im Hintergrund, nur Neues,
   große Dateien in Teilen, fortsetzbar, mit Wiederherstellen; Alben/Ereignisse als **Webseite** im Bucket teilen
+- **Archiv-Ansicht im Bucket** – die ganze Sammlung ohne FotoArchiv im Browser ansehen, aufgebaut wie FotoArchiv:
+  Übersicht mit „An diesem Tag“, Zeitleiste, Kalender, Alben & Ereignisse, Ordner, Personen, Karte, Favoriten,
+  Suche und Filter, Videos, 360°; **private Fotos verschlüsselt** (AES-256, gleiches Passwort wie in FotoArchiv);
+  Änderungen werden automatisch nachgezogen. Der Bucket bleibt privat (signierte Links), FotoArchiv warnt,
+  wenn der Sicherungsordner ohne Schlüssel lesbar ist, und sperrt ihn auf Knopfdruck
+- Datum aus AVCHD-Camcordern (MTS) wird aus dem Videostrom gelesen
 - Import aus iCloud, Google Takeout, Ordnern, ZIP-Dateien
 - Diashow (auch als Video), Teilen, aufs Handy per QR-Code, Samsung-Fernseher / The Frame
 - Ordner für die **Amazon-Photos-App** füllen (Album, Favoriten)

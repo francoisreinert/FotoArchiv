@@ -606,3 +606,23 @@ a.stat:hover { border-color: #4a525b; }
   color: #fff; border-radius: 4px; padding: 0 5px; }
 
 .kindsw button[hidden] { display: none; }
+
+/* Datum aus dem Dateinamen (#/namensdatum) */
+.nd-bar { margin: 10px 0; position: sticky; top: 0; z-index: 3; background: var(--bg); padding: 8px 0; }
+.nd-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); gap: 10px; }
+.nd-card { display: flex; flex-direction: column; gap: 4px; background: var(--panel); border: 1px solid var(--line); border-radius: 8px;
+  padding: 6px; font-size: 12px; cursor: default; }
+.nd-card.warn { border-color: #b0832f; }
+.nd-card img { width: 100%; aspect-ratio: 1; object-fit: cover; border-radius: 5px; cursor: zoom-in; background: #1d2023; }
+.nd-name { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; color: var(--muted); }
+.nd-date { font-size: 13px; font-weight: 600; display: flex; align-items: center; gap: 6px; cursor: pointer; }
+.nd-warn { color: #e0a040; }
+
+/* Sicherung läuft: Karte unten rechts auf allen Seiten */
+#bkbar { position: fixed; right: 16px; bottom: 16px; z-index: 45; display: flex; align-items: center; gap: 8px; max-width: calc(100vw - 32px);
+  background: var(--panel); border: 1px solid var(--line); border-radius: 18px; padding: 6px 14px; font-size: 13px; color: var(--text);
+  text-decoration: none; box-shadow: 0 6px 20px rgba(0,0,0,.45); }
+#bkbar[hidden] { display: none; }
+#bkbar .progress { width: 90px; margin: 0; display: inline-block; }
+#bkbar small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
+.bk-pct { float: right; font-size: 20px; font-weight: 700; }

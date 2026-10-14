@@ -51,10 +51,34 @@ def set_password(con, new, old=None):
     return True
 
 
+# Schlüssel für die verschlüsselten privaten Fotos in der Archiv-Ansicht (archview.py): beim Entsperren aus dem
+# Passwort abgeleitet, nur im Arbeitsspeicher – weder Passwort noch Schlüssel werden gespeichert.
+VIEW_KEYS = None
+VIEW_SALT = None
+
+
+def _derive_view_keys(con, pw):
+    global VIEW_KEYS, VIEW_SALT
+    import aesctr
+
+    row = con.execute("SELECT value FROM meta WHERE key='view_salt'").fetchone()
+    if row:
+        salt = row[0]
+    else:
+        salt = secrets.token_hex(16)
+        con.execute("INSERT INTO meta(key, value) VALUES('view_salt', ?)", (salt,))
+        con.commit()
+    VIEW_KEYS, VIEW_SALT = aesctr.derive(pw, bytes.fromhex(salt)), salt
+
+
 def unlock(con, pw):
     if not check(con, pw):
         time.sleep(1)  # Durchprobieren bremsen
         return None
+    try:
+        _derive_view_keys(con, pw)
+    except Exception:
+        pass
     token = secrets.token_urlsafe(24)
     with _lock:
         _tokens[token] = time.time()
