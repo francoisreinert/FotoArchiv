@@ -181,6 +181,11 @@ body.filters-open #layout { top: calc(var(--top) + 56px); }
   background: rgba(0,0,0,.35); border: 0; border-radius: 10px; opacity: .2; }
 .v-stage:hover .v-nav { opacity: .85; }
 .v-prev { left: 10px; } .v-next { right: 10px; }
+/* Vollbild: nur das Foto, Leiste und Info ausgeblendet, Pfeile nur beim Darüberfahren */
+#viewer:fullscreen .v-bar, #viewer:fullscreen .v-panel { display: none; }
+#viewer:fullscreen .v-media { inset: 0; }
+#viewer:fullscreen .v-nav { opacity: 0; }
+#viewer:fullscreen .v-nav:hover { opacity: .85; }
 .v-panel { width: 340px; flex: none; background: var(--panel); border-left: 1px solid var(--line); overflow-y: auto; padding: 16px; }
 .v-panel h3 { margin: 0 0 4px; font-size: 16px; }
 .v-panel dl { display: grid; grid-template-columns: 90px 1fr; gap: 6px 10px; margin: 14px 0; }

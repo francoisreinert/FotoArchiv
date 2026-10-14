@@ -53,6 +53,7 @@ FUNKTIONEN
                - Nach vielen Änderungen: "Erkennung aktualisieren"
   Karte        Fotos mit GPS auf der Karte (braucht Internet für die Kartenbilder)
   Favoriten    Stern im Betrachter (Taste F); Bewertungen ab 4 Sternen (z. B. aus Lightroom) zählen auch
+  Vollbild     im Betrachter ⛶, Taste V oder Doppelklick aufs Foto; ← → blättert weiter, Esc beendet
   Bibliothek   Neue Fotos einlesen ("Bibliothek aktualisieren"), Ordnerauswahl
   Duplikate    Gleiche Fotos/Videos nebeneinander; die bessere Datei behalten, Rest in den Papierkorb
                (siehe DUPLIKATE)

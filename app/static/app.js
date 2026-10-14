@@ -1782,6 +1782,7 @@ function renderStackStrip(it) {
   });
 }
 function closeViewer() {
+  if (document.fullscreenElement === viewer.el) document.exitFullscreen().catch(() => {});
   if (viewer.tvFollow) stopTvFollow(false);
   viewer.el.hidden = true;
   $(".v-media", viewer.el).innerHTML = "";
@@ -2890,6 +2891,12 @@ function step(d) {
 $(".v-prev").onclick = () => step(-1);
 $(".v-next").onclick = () => step(1);
 $(".v-close").onclick = closeViewer;
+function toggleFull() {
+  if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+  else if (viewer.el.requestFullscreen) viewer.el.requestFullscreen().catch(() => {});
+}
+$(".v-full").onclick = toggleFull;
+$(".v-media").addEventListener("dblclick", e => { if (!e.target.closest(".fbox, video")) toggleFull(); });
 $(".v-info").onclick = () => togglePanel();
 $(".v-edit").onclick = () => openEditor();
 $(".v-vadd").onclick = e => { if (viewer.item && !viewer.item.locked) quickAddVideo([viewer.item.id], e.shiftKey); };
@@ -2971,6 +2978,7 @@ document.addEventListener("keydown", e => {
   else if (e.key === "ArrowLeft") step(-1);
   else if (e.key === "Escape") { if ($(".popover")) closePopover(); else closeViewer(); }
   else if (e.key === "i" || e.key === "I") togglePanel();
+  else if (e.key === "v" || e.key === "V") toggleFull();
   else if (e.key === "g" || e.key === "G") toggleFaces();
   else if (e.key === "f" || e.key === "F") toggleFav();
   else if (e.key === "r" || e.key === "R") rotate("cw");
