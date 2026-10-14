@@ -1553,24 +1553,28 @@ function nameField(id) {
 }
 function bindNameField(el, onEnter) {
   const inp = $("input", el), dd = $(".dd", el);
-  let sel = -1;
+  // Liste erst bei Klick ins Feld, Tippen oder Pfeil runter – sonst verdeckt sie die Knöpfe und Enter bestätigt direkt
+  let sel = -1, open = false;
   const update = () => {
     const v = inp.value.trim().toLowerCase();
     const list = state.persons.filter(p => !v || p.name.toLowerCase().includes(v)).slice(0, 8);
     dd.innerHTML = list.map((p, i) => `<div class="${i === sel ? "sel" : ""}">${esc(p.name)}</div>`).join("");
-    dd.hidden = !list.length || document.activeElement !== inp;
-    $$("div", dd).forEach((d, i) => d.onmousedown = ev => { ev.preventDefault(); inp.value = list[i].name; dd.hidden = true; });
+    dd.hidden = !open || !list.length || document.activeElement !== inp;
+    $$("div", dd).forEach((d, i) => d.onmousedown = ev => { ev.preventDefault(); inp.value = list[i].name; open = false; dd.hidden = true; });
     return list;
   };
-  inp.addEventListener("input", () => { sel = -1; update(); });
-  inp.addEventListener("focus", update);
-  inp.addEventListener("blur", () => setTimeout(() => (dd.hidden = true), 100));
+  inp.addEventListener("input", () => { sel = -1; open = true; update(); });
+  inp.addEventListener("click", () => { open = true; update(); });
+  inp.addEventListener("blur", () => setTimeout(() => { open = false; dd.hidden = true; }, 100));
   inp.addEventListener("keydown", e => {
+    if (e.key === "ArrowDown" && !open) { open = true; sel = -1; }
     const list = update();
     if (e.key === "ArrowDown") { sel = Math.min(list.length - 1, sel + 1); update(); e.preventDefault(); }
     if (e.key === "ArrowUp") { sel = Math.max(-1, sel - 1); update(); e.preventDefault(); }
+    if (e.key === "Escape" && open) { open = false; dd.hidden = true; e.preventDefault(); }
     if (e.key === "Enter") {
-      if (sel >= 0 && list[sel]) inp.value = list[sel].name;
+      if (open && sel >= 0 && list[sel]) inp.value = list[sel].name;
+      open = false;
       dd.hidden = true;
       if (onEnter) onEnter(inp.value.trim());
     }
@@ -1947,7 +1951,8 @@ function faceMenu(f, x, y) {
       ${known && f.source === "auto" ? `<button id="fmyes">Bestätigen</button>` : ""}
       ${known || f.sugg_name ? `<button id="fmno">Falsch</button>` : ""}<button id="fmign" title="z. B. fremde Person">Ignorieren</button></div>`);
   const done = async (fn) => { closePopover(); await fn; await reloadItem(); };
-  const inp = bindNameField($("#fm", p), v => v && done(api("/api/faces/assign", { faces: [f.id], name: v })));
+  const inp = bindNameField($("#fm", p), v => v ? done(api("/api/faces/assign", { faces: [f.id], name: v }))
+    : $("#fmyes", p) && $("#fmyes", p).click());
   inp.focus();
   $("#fmok", p).onclick = () => inp.value.trim() && done(api("/api/faces/assign", { faces: [f.id], name: inp.value.trim() }));
   const yes = $("#fmyes", p);
