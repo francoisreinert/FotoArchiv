@@ -2203,13 +2203,29 @@ async function runAction(act, ev) {
 }
 
 // ------------------------------------------------------------- Diashow ----
+// Diashow-Reihenfolge: gemerkte Wahl, Aufnahmedatum vom Server (undatierte ans Ende)
+const byDate = new Map();
+function orderSelect(sel, ids) {
+  try { const v = localStorage.getItem("fa_show_order"); if (v !== null) sel.value = v; } catch { /* egal */ }
+  sel.addEventListener("change", () => { try { localStorage.setItem("fa_show_order", sel.value); } catch { /* egal */ } });
+  const key = ids.length + ":" + ids[0] + ":" + ids[ids.length - 1];
+  if (!byDate.has(key)) byDate.set(key, api("/api/items/order", { ids }).then(r => (byDate.set(key, r.ids), r.ids)).catch(() => null));
+}
+function showOrder(ids, how) {
+  if (how === "shuffle") return [...ids].sort(() => Math.random() - 0.5);
+  if (how !== "asc" && how !== "desc") return [...ids];
+  const asc = byDate.get(ids.length + ":" + ids[0] + ":" + ids[ids.length - 1]);
+  if (!Array.isArray(asc)) { toast("Reihenfolge nach Datum noch nicht geladen – wie angezeigt"); return [...ids]; }
+  return how === "asc" ? [...asc] : [...asc].reverse();
+}
+
 async function slideshowDialog(ids, title) {
   const m = await api("/api/music");
   const p = modal(`<div class="dlg"><b>Diashow: ${esc(title)}</b> <span class="muted">(${ids.length.toLocaleString("de-DE")})</span>
     <div class="form">
       <label>Dauer</label><select id="sd"><option value="3">3 Sekunden</option><option value="5" selected>5 Sekunden</option><option value="8">8 Sekunden</option></select>
       <label>Effekt</label><select id="se"><option value="kb">Kamerafahrt (Ken Burns)</option><option value="fade">Nur überblenden</option></select>
-      <label>Reihenfolge</label><select id="so"><option value="">wie angezeigt</option><option value="shuffle">zufällig</option></select>
+      <label>Reihenfolge</label><select id="so"><option value="">wie angezeigt</option><option value="asc">alt → neu</option><option value="desc">neu → alt</option><option value="shuffle">zufällig</option></select>
       <label>Musik</label><select id="sm"><option value="">ohne Musik</option>
         ${m.music.length ? `<option value="__all">alle Titel (${m.music.length})</option>` : ""}
         ${m.music.map((x, i) => `<option value="${i}">${esc(x.name)}</option>`).join("")}<option value="__file">eigene Datei wählen …</option></select>
@@ -2227,10 +2243,10 @@ async function slideshowDialog(ids, title) {
   const opts = () => {
     const v = $("#sm", p).value;
     const tracks = v === "__all" ? m.music : v !== "" && v !== "__file" ? [m.music[+v]] : [];
-    let order = [...ids];
-    if ($("#so", p).value === "shuffle") order.sort(() => Math.random() - 0.5);
+    const order = showOrder(ids, $("#so", p).value);
     return { ids: order, seconds: +$("#sd", p).value, kb: $("#se", p).value === "kb", tracks, files: v === "__file" ? files : null };
   };
+  orderSelect($("#so", p), ids);
   $("#sno", p).onclick = closePopover;
   $("#smir", p).onclick = async () => {
     try { await api("/api/tv/mirror", {}); toast("Rechts unten den Fernseher anklicken, dann hier „▶ Abspielen“", 8000); }
@@ -2511,7 +2527,7 @@ async function tvDialog(ids, title) {
       <label class="tsm">Musik</label><select id="tmu" class="tsm"><option value="">ohne Musik (Videos mit Originalton)</option>
         ${m.music.length ? `<option value="__all">alle Titel (${m.music.length})</option>` : ""}
         ${m.music.map((x, i) => `<option value="${i}">${esc(x.name)}</option>`).join("")}</select>
-      <label>Reihenfolge</label><select id="to"><option value="">wie angezeigt</option><option value="shuffle">zufällig</option></select>
+      <label>Reihenfolge</label><select id="to"><option value="">wie angezeigt</option><option value="asc">alt → neu</option><option value="desc">neu → alt</option><option value="shuffle">zufällig</option></select>
       <label>Videos</label><label style="color:var(--text)"><input type="checkbox" id="tvv" ${hasVideo ? "checked" : ""}> Videos mit abspielen</label>
       <label class="tdi" hidden>Wiederholen</label><label class="tdi" style="color:var(--text)" hidden><input type="checkbox" id="tl" checked> in Endlosschleife</label></div>
     <div class="help">Der Fernseher wechselt dafür in den normalen Bildschirm (beim Frame: Kunstmodus aus). Steuerung unten rechts.
@@ -2524,11 +2540,12 @@ async function tvDialog(ids, title) {
   };
   $("#tm", p).onchange = sync;
   sync();
+  orderSelect($("#to", p), ids);
   $("#tno", p).onclick = closePopover;
   $("#tgo", p).onclick = () => {
     const mv = $("#tmu", p).value;
     const tracks = mv === "__all" ? m.music : mv !== "" ? [m.music[+mv]] : [];
-    const o = { ids, seconds: +$("#td", p).value, shuffle: $("#to", p).value === "shuffle", videos: $("#tvv", p).checked,
+    const o = { ids: showOrder(ids, $("#to", p).value), seconds: +$("#td", p).value, shuffle: $("#to", p).value === "shuffle", videos: $("#tvv", p).checked,
       loop: $("#tl", p).checked, title, mode: $("#tm", p).value, kenburns: $("#te", p).value === "kb", music: tracks.map(t => t.path) };
     closePopover();
     startTvShow(o);

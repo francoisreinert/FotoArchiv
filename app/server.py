@@ -1761,6 +1761,17 @@ def r_import_folder(h, p):
     h.send_json({"ok": ok} if ok else {"error": "Es läuft schon ein Import"})
 
 
+def r_items_order(h, p):
+    """Ids nach Aufnahmedatum (alt → neu), undatierte am Ende."""
+    ids = [int(i) for i in h.body().get("ids") or []]
+    taken = {}
+    c = db()
+    for i in range(0, len(ids), 900):
+        part = ids[i:i + 900]
+        taken.update(c.execute("SELECT id, taken FROM items WHERE id IN (%s)" % ",".join("?" * len(part)), part).fetchall())
+    h.send_json({"ids": sorted(ids, key=lambda i: (taken.get(i) is None, taken.get(i) or "", i))})
+
+
 def r_icloudsync(h, p):
     import icloudsync
 
@@ -2965,6 +2976,7 @@ ROUTES = [
     ("POST", r"/api/import/stop", r_import_stop),
     ("GET", r"/api/inbox", r_inbox),
     ("GET", r"/api/icloudsync", r_icloudsync),
+    ("POST", r"/api/items/order", r_items_order),
     ("POST", r"/api/icloudsync", r_icloudsync_action),
     ("POST", r"/api/inbox", r_inbox_action),
     ("GET", r"/api/fs", r_fs),
