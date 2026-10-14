@@ -69,6 +69,8 @@ MYLIO ÜBERNEHMEN (nur wer bisher Mylio benutzt hat)
   "Bibliothek aktualisieren". Mylio wird dabei nur gelesen.
 
 FOTOS BEARBEITEN UND ORDNEN
+  Titelbild: Ein Foto markieren › "…" › "Als Titelbild des Albums / Ordners / Ereignisses /
+  von <Person> / des Monats (Kalender)". Gilt auch für die Archiv-Ansicht im Bucket.
   Markieren: Haken oben links im Foto (Shift = Bereich, Strg/Cmd = einzeln, "Monat auswählen",
   Strg+A = alle). Oben erscheint eine Leiste: Favorit, + Album, + Ereignis, + Person, + Stichwort,
   "Mehr …": drehen, Datum ändern, Person/Stichwort entfernen, aus Album entfernen, Titelbild,
@@ -260,6 +262,16 @@ FERNSEHER & SAMSUNG THE FRAME
      Geht nur, solange FotoArchiv am PC läuft.
 
 NEUE FOTOS HINZUFÜGEN (Menü "Import")
+  Eingangsordner (am einfachsten): Fotos/Videos in den Ordner FotoArchiv-Eingang auf der Platte
+           kopieren (neben dem Ordner FotoArchiv; auch übers Netz oder vom Mac). FotoArchiv sieht jede
+           Minute nach, wartet, bis eine Datei fertig kopiert ist, und verschiebt Neues in die
+           Bibliothek (gleiche Platte: sofort, kein doppelter Platz; XMP/AAE wandern mit).
+           Unterordner werden zu Alben ("Urlaub Sylt\…" → Album "Urlaub Sylt"), ZIPs werden
+           ausgepackt. Was schon im Archiv war, landet in FotoArchiv-Eingang\_erledigt\<Datum>\;
+           dort steht auch protokoll.txt (was wohin kam). Dort wird nichts gelöscht – den Ordner
+           leerst du selbst. Nicht lesbare Dateien: _fehler\. Alles Übernommene hat das Stichwort
+           "Eingang" (Suche).
+           Ein-/ausschalten und Ablageordner wählen unter Import › Eingangsordner.
   iCloud:  Konto hinzufügen (Name, Apple-ID, Passwort, dann Code vom iPhone). Danach reicht
            "Neue holen" – auch Fotos aus einer geteilten Bibliothek. Was schon auf der Platte ist,
            wird erkannt und nicht heruntergeladen. Die Anmeldung hält ca. 1–2 Monate.
@@ -267,10 +279,23 @@ NEUE FOTOS HINZUFÜGEN (Menü "Import")
            "Erweiterter Datenschutz" aus.
   Google:  Google Takeout (nur Google Fotos, ZIP) herunterladen und den Ordner mit den ZIPs
            importieren. Datum, Ort und Google-Alben werden übernommen.
-  Amazon / Handy / SD-Karte / WhatsApp: Ordner oder ZIP wählen und importieren.
+  Amazon / Handy / SD-Karte / WhatsApp: Ordner oder ZIP wählen und importieren. Mit
+           "verschieben statt kopieren" werden neue Dateien aus der Quelle herausgenommen (spart Platz).
   Neue Dateien landen im Fotoordner unter Bilder\<Jahr>\ mit der Herkunft als Stichwort; Doppelte werden
   übersprungen (gleicher Name+Größe, gleiche Aufnahmezeit+Maße, gleicher Bildinhalt).
+  Videos können in einen eigenen Ordner (z. B. Videos\<Jahr>\) – Import › Eingangsordner › Ablage.
+  Videos von Live Photos bleiben immer beim Foto.
   Man kann auch einfach Dateien nach Bilder\<Jahr> kopieren und "Bibliothek aktualisieren".
+
+ZURÜCK NACH ICLOUD (nur Windows, mit "iCloud für Windows" aus dem Microsoft Store)
+  iCloud für Windows einrichten (Fotos an), dann in FotoArchiv: Fotos markieren › "…" › "Nach iCloud
+  hochladen", oder in einem Album/Ereignis oben "☁ iCloud" einschalten – dann gehen auch künftige Fotos
+  darin von selbst nach iCloud (private nie). FotoArchiv legt sie in den iCloud-Ordner, wartet, bis sie
+  hochgeladen sind, und gibt dann den Speicher am PC frei (sie bleiben in iCloud). Was schon in iCloud
+  ist, wird erkannt. Wichtig: Im Ordner "iCloud Photos" nichts löschen – das löscht auch in iCloud.
+  Alben, Personen, Stichwörter und Bearbeitungen aus FotoArchiv übernimmt Apple so nicht.
+  Geteilte Alben: unter Import "stündlich importieren" – jedes geteilte Album wird ein Album
+  (Apple liefert sie verkleinert, ca. 2048 px; eigene Originale werden als "schon vorhanden" erkannt).
 
 AN EINEM ANDEREN COMPUTER WEITERMACHEN
   1. Am alten Computer: Bibliothek › "FotoArchiv beenden", dann die Platte sicher auswerfen

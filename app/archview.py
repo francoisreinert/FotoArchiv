@@ -424,6 +424,11 @@ def build_data(con, rows, have_p, base):
                                              "WHERE ai.album_id=? ORDER BY i.taken DESC", (aid,)) if r[0] in ids]
         cover = own_cover if own_cover in ids else (max(members) if members else None)
         albums.append([aid, name, parent, members, cover, desc or ""])
+    # selbst gewählte Titelbilder (server.r_cover_set)
+    try:
+        cov = {(k, key): iid for k, key, iid in con.execute("SELECT kind, key, item_id FROM covers")}
+    except Exception:
+        cov = {}
     # Ereignisse: Titelbild wie in FotoArchiv (Favoriten zuerst, dann nach Datum, das Bild bei einem Drittel)
     events = []
     for eid, name, start, end in con.execute("SELECT id, name, start, end FROM events WHERE COALESCE(private,0)=0 "
@@ -432,16 +437,20 @@ def build_data(con, rows, have_p, base):
             "SELECT id FROM items WHERE taken >= ? AND taken <= ? AND dup_of IS NULL AND raw_of IS NULL "
             "AND COALESCE(hidden,0)=0 ORDER BY fav DESC, rating DESC, taken", ((start or "")[:10], (end or start or "")[:10] + " 23:59:59"))
             if r[0] in ids]
-        events.append([eid, name, start, end, rows_e[len(rows_e) // 3] if rows_e else None])
+        own = cov.get(("event", str(eid)))
+        events.append([eid, name, start, end, own if own in ids else (rows_e[len(rows_e) // 3] if rows_e else None)])
     persons = []
-    for pid, name in con.execute("SELECT id, name FROM persons WHERE COALESCE(hidden,0)=0 AND name IS NOT NULL "
-                                 "AND name<>'' ORDER BY name COLLATE NOCASE"):
+    for pid, name, cface in con.execute("SELECT p.id, p.name, f.item_id FROM persons p LEFT JOIN faces f ON f.id = p.cover_face "
+                                        "WHERE COALESCE(p.hidden,0)=0 AND p.name IS NOT NULL "
+                                        "AND p.name<>'' ORDER BY p.name COLLATE NOCASE"):
         members = sorted({r[0] for r in con.execute("SELECT item_id FROM faces WHERE person_id=?", (pid,)) if r[0] in ids})
         if members:
-            persons.append([pid, name, members])
+            persons.append([pid, name, members, cface if cface in ids else None])
+    covers = {"f": {k: v for (kd, k), v in cov.items() if kd == "folder" and v in ids},
+              "m": {k: v for (kd, k), v in cov.items() if kd == "month" and v in ids}}
     return {"generated": datetime.datetime.now().isoformat(timespec="minutes"), "total": len(recs),
             "cams": list(cams), "places": list(places), "folders": list(folders), "recs": recs, "albums": albums,
-            "events": events, "persons": persons, "kw": kw, "pano": pano}
+            "events": events, "persons": persons, "kw": kw, "pano": pano, "covers": covers}
 
 
 def config(t):

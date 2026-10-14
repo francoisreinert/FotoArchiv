@@ -513,7 +513,9 @@ const routes = {
     head.innerHTML = `<h2 style="margin:0;font-size:20px">${esc(a.name)}</h2><span class="count">${res.total.toLocaleString("de-DE")} Fotos</span>
       <button class="ghost" data-show>▶ Diashow</button><button class="ghost" data-share>Teilen …</button>
       ${state.hasS3 ? '<button class="ghost" data-web title="Album als Webseite auf deinem S3-Speicher teilen">🌐 Webseite</button>' : ""}
-      <button class="ghost" data-amz title="Album in den Ordner für die Amazon-Photos-App kopieren">Amazon</button>${zoomButtons()}`;
+      <button class="ghost" data-amz title="Album in den Ordner für die Amazon-Photos-App kopieren">Amazon</button>
+      <button class="ghost" data-icl title="Fotos dieses Albums (auch künftige) nach iCloud hochladen">☁ iCloud</button>${zoomButtons()}`;
+    iclToggle($("[data-icl]", head), "album", a.id, a.name);
     if ($("[data-web]", head)) $("[data-web]", head).onclick = () => albumWebDialog(a);
     $("[data-amz]", head).onclick = () => albumAmazon(a);
     $("[data-show]", head).onclick = () => slideshowDialog(res.ids, a.name);
@@ -530,11 +532,14 @@ const routes = {
     if (e.private && !state.priv.unlocked) return lockScreen(`Das Ereignis „${e.name}“ ist privat.`);
     setSearchScope(`Ereignis „${e.name}“`);
     await showGrid(e.name, { event: e.id }, {
+      context: { event: e.id, eventName: e.name },
       headExtra: `<span class="muted">${fmtRange(e.start, e.end)}</span><button id="epriv">${e.private ? "Privat aufheben" : "🔒 Privat"}</button><button id="eren">Umbenennen</button>
         <button id="edate">Zeitraum ändern</button><button id="edel" class="danger">Löschen</button>
+        <button id="eicl" class="ghost" title="Fotos dieses Ereignisses (auch künftige) nach iCloud hochladen">☁ iCloud</button>
         ${state.hasS3 ? '<button id="eweb" class="ghost" title="Ereignis als Webseite auf deinem S3-Speicher teilen">🌐 Webseite</button>' : ""}`,
       bind: head => {
         if ($("#eweb", head)) $("#eweb", head).onclick = () => webDialog({ event: e.id }, e.name);
+        iclToggle($("#eicl", head), "event", e.id, e.name);
         $("#epriv", head).onclick = async () => {
           if (!e.private && !await ensurePassword()) return;
           await api(`/api/events/${e.id}`, { private: !e.private });
@@ -868,7 +873,7 @@ const routes = {
     const all = $("#allin", page);
     if (all) all.onclick = async () => {
       page.remove();
-      await showGrid(parts[parts.length - 1], { folder: path, recursive: "1" });
+      await showGrid(parts[parts.length - 1], { folder: path, recursive: "1" }, { context: { folder: path, folderName: parts[parts.length - 1] } });
     };
     if (path && d.direct) {
       const res = await api("/api/query?" + filterParams({ folder: path }));
@@ -877,7 +882,7 @@ const routes = {
       head.innerHTML = `<span class="count">${res.total.toLocaleString("de-DE")} Dateien in diesem Ordner</span>${zoomButtons()}`;
       main.appendChild(head);
       bindZoom(head);
-      currentGrid = new VGrid(main, res);
+      currentGrid = new VGrid(main, res, { context: { folder: path, folderName: parts[parts.length - 1] } });
     } else if (!d.children.length) {
       page.insertAdjacentHTML("beforeend", `<div class="empty">Keine Ordner im Katalog.</div>`);
     }
@@ -961,7 +966,7 @@ const routes = {
       main.appendChild(head);
       bindZoom(head);
       $("#addchip", head).onclick = () => { addChip(p.id); location.hash = "#/fotos"; };
-      currentGrid = new VGrid(main, res);
+      currentGrid = new VGrid(main, res, { context: { person: p.id, personName: p.name } });
       return;
     }
     const type = { vorschlaege: "sugg", auto: "auto", bestaetigt: "confirmed" }[tab];
@@ -1106,6 +1111,21 @@ const routes = {
     main.appendChild(page);
     page.innerHTML = `<h1>Import <small>neue Fotos auf die Platte holen – bereits vorhandene werden erkannt und übersprungen</small></h1>
       <div class="card" id="jobcard" hidden></div>
+      <div class="card" id="inbox"><h2>Eingangsordner</h2>
+        <p class="help">Neue Fotos und Videos einfach in diesen Ordner kopieren (auch übers Netz, vom Mac oder Handy) – FotoArchiv sieht jede Minute nach,
+        wartet, bis eine Datei fertig kopiert ist, und <b>verschiebt</b> sie in die Bibliothek (auf derselben Platte sofort, ohne doppelten Platz).
+        Was schon im Archiv ist, wird erkannt und landet in <b>_erledigt/Datum</b>, mit einem Protokoll, was wohin kam. Dort wird nichts gelöscht – den Ordner leerst du selbst.
+        <b>Unterordner werden zu Alben</b> (Eingang/Urlaub Sylt/… → Album „Urlaub Sylt“), ZIP-Dateien werden ausgepackt.</p>
+        <div id="ib-body" class="muted">…</div>
+      </div>
+      <div class="card" id="icl"><h2>Nach iCloud zurück & geteilte Alben <small class="muted">über „iCloud für Windows“</small></h2>
+        <p class="help">FotoArchiv legt Fotos in den Ordner von iCloud für Windows; sobald sie hochgeladen sind, wird dort der Speicher
+        freigegeben (das Foto bleibt in iCloud, belegt am PC nichts). Was schon in iCloud ist, wird erkannt und nicht doppelt geschickt.
+        <b>Im iCloud-Ordner löscht FotoArchiv nie etwas</b> – Löschen dort würde auch in iCloud löschen. Alben, Personen und Stichwörter
+        übernimmt Apple so nicht. Hochladen: Fotos markieren › „…“ › „Nach iCloud“, oder bei einem Album/Ereignis oben „☁ iCloud“
+        einschalten – dann gehen auch künftige Fotos darin von selbst nach iCloud (private nie).</p>
+        <div id="icl-body" class="muted">…</div>
+      </div>
       <div class="card"><h2>iCloud Fotos</h2>
         <p class="help">Holt neue Fotos und Videos aus iCloud, auch aus einer <b>geteilten Bibliothek</b> (z. B. wenn jemand aus der Familie seine Bibliothek mit dir teilt).
         Was schon auf der Platte liegt, wird anhand von Name, Größe, Aufnahmezeit und Bildmaßen erkannt und gar nicht erst heruntergeladen.
@@ -1132,6 +1152,8 @@ const routes = {
           <label>Quelle</label><div class="row" style="flex-wrap:nowrap"><input type="text" id="fp" placeholder="Ordner oder .zip wählen" style="flex:1"><button id="fpb">Durchsuchen …</button></div>
           <label>Herkunft</label><input type="text" id="fl" placeholder="z. B. Google Fotos, Amazon Fotos (optional)">
           <label>Alben</label><label style="color:var(--text)"><input type="checkbox" id="fa"> Unterordner als Alben übernehmen (bei Google Takeout automatisch)</label>
+          <label>Quelle</label><label style="color:var(--text)"><input type="checkbox" id="fm"> neue Dateien <b>verschieben</b> statt kopieren
+            <span class="muted">(spart Platz; was schon im Archiv ist, bleibt in der Quelle liegen)</span></label>
           <span></span><div class="row"><button id="fdry">Vorschau</button><button class="primary" id="fgo">Importieren</button></div>
         </div>
         <details class="help"><summary style="cursor:pointer">So bekommst du deine Fotos von Google und Amazon</summary>
@@ -1151,11 +1173,83 @@ const routes = {
       const path = $("#fp", page).value.trim();
       if (!path) return toast("Bitte erst Ordner oder ZIP wählen");
       try {
-        await api("/api/import/folder", { path, label: $("#fl", page).value.trim(), albums: $("#fa", page).checked || null, dry });
+        if (!dry && $("#fm", page).checked && !await confirmBox("Neue Dateien aus der Quelle in die Bibliothek verschieben? Sie sind danach nicht mehr im Quellordner.")) return;
+        await api("/api/import/folder", { path, label: $("#fl", page).value.trim(), albums: $("#fa", page).checked || null, dry, move: $("#fm", page).checked });
         refresh();
       } catch (e) { toast(e.message, 5000); }
     };
     $("#fdry", page).onclick = () => folder(true);
+    const inbox = async () => {
+      const ib = await api("/api/inbox");
+      const t = v => esc(String(v || "").replace("T", " ").slice(0, 16));
+      $("#ib-body", page).innerHTML = `<div class="form">
+          <label>Ordner</label><div class="row"><code>${esc(ib.path)}</code><button id="ib-open">Öffnen</button><button id="ib-done">Erledigte ansehen</button></div>
+          <label>Automatisch</label><label style="color:var(--text)"><input type="checkbox" id="ib-on" ${ib.enabled ? "checked" : ""}> jede Minute nachsehen und übernehmen</label>
+          <label>Stand</label><div><div id="ib-stat"></div><button id="ib-now" style="margin-top:6px">Jetzt nachsehen</button></div>
+          <label>Ablage</label><div class="row">Fotos nach <input id="ib-tp" value="${esc(ib.targets.photo)}" style="width:110px">/Jahr,
+            Videos nach <input id="ib-tv" value="${esc(ib.targets.video)}" style="width:110px">/Jahr <button id="ib-save">Übernehmen</button></div>
+          <span></span><div class="help">Gilt für Eingang, Ordner/ZIP und iCloud. Videos von Live Photos bleiben immer beim Foto.</div>
+        </div>`;
+      inboxStat(ib);
+      $("#ib-open", page).onclick = () => api("/api/inbox", { action: "open" });
+      $("#ib-done", page).onclick = () => api("/api/inbox", { action: "open", where: "done" });
+      $("#ib-on", page).onchange = async e => { await api("/api/inbox", { action: "enable", on: e.target.checked }); inbox(); };
+      $("#ib-now", page).onclick = async () => {
+        const r = await api("/api/inbox", { action: "check" });
+        toast(r.started ? `${r.started} Datei(en) werden übernommen` : "Nichts Fertiges im Eingang (Dateien müssen ~1 Minute unverändert liegen)", 4000);
+        refresh(); inbox();
+      };
+      $("#ib-save", page).onclick = async () => {
+        try { await api("/api/inbox", { action: "targets", photo: $("#ib-tp", page).value, video: $("#ib-tv", page).value }); toast("Gespeichert"); inbox(); }
+        catch (e) { toast(e.message, 5000); }
+      };
+    };
+    const iclLabel = { wartet: "warten", kopiert: "werden hochgeladen", hochgeladen: "hochgeladen", vorhanden: "waren schon in iCloud", fehler: "Fehler" };
+    const icl = async () => {
+      const el = $("#icl-body", page);
+      if (!el) return;
+      const s = await api("/api/icloudsync");
+      const key = JSON.stringify(s);
+      if (key === icl.key) return;
+      icl.key = key;
+      if (!s.available) { el.innerHTML = `Nicht verfügbar: ${esc(s.why || "")}`; return; }
+      const c = s.counts || {};
+      el.innerHTML = `<div class="form">
+          <label>Ordner</label><code>${esc(s.folder)}</code>
+          <label>Stand</label><div>${Object.keys(iclLabel).filter(k => c[k]).map(k => `<b>${(c[k] || 0).toLocaleString("de-DE")}</b> ${iclLabel[k]}`).join(" · ") || "noch nichts hochgeladen"}
+            ${s.message ? `<div class="muted">${esc(s.message)}</div>` : ""}
+            ${s.errors.length ? `<div class="muted" style="font-size:12px">${s.errors.map(e => esc(e.name + ": " + e.error)).join("<br>")}</div><button id="icl-retry">Fehler erneut versuchen</button>` : ""}</div>
+          <label>Automatisch</label><div>${s.flags.length ? s.flags.map(f => `<a href="#/${f.kind === "album" ? "album" : "ereignis"}/${f.id}">${f.kind === "album" ? "Album" : "Ereignis"} „${esc(f.name)}“</a>`).join(", ")
+            : "kein Album/Ereignis – oben in einem Album oder Ereignis „☁ iCloud“ einschalten"}</div>
+          <label>Geteilte Alben</label><div><label style="color:var(--text)"><input type="checkbox" id="icl-sh" ${s.shared_on ? "checked" : ""}> stündlich importieren
+            (jedes geteilte Album wird ein Album; nur Neues; Apple liefert sie verkleinert)</label>
+            <div class="muted">${(s.shared_albums || []).map(esc).join(" · ") || "keine geteilten Alben"}${s.shared_last ? ` · zuletzt ${esc(s.shared_last.slice(11, 16))}: ${esc(s.shared_result)}` : ""}</div>
+            <button id="icl-shnow">Jetzt importieren</button></div>
+        </div>`;
+      $("#icl-sh", page).onchange = async e => { await api("/api/icloudsync", { action: "shared", on: e.target.checked }); icl.key = ""; icl(); };
+      $("#icl-shnow", page).onclick = async () => {
+        const r = await api("/api/icloudsync", { action: "shared_now" });
+        toast(r.started ? "Import der geteilten Alben läuft" : "Es läuft schon ein Import – bitte gleich nochmal", 4000); refresh();
+      };
+      if ($("#icl-retry", page)) $("#icl-retry", page).onclick = async () => { await api("/api/icloudsync", { action: "retry" }); toast("Wird erneut versucht"); };
+    };
+    icl();
+    // nur die Statuszeile laufend neu zeichnen (Eingabefelder bleiben stehen)
+    const inboxStat = ib => {
+      const el = $("#ib-stat", page);
+      if (!el) return;
+      const t = v => esc(String(v || "").replace("T", " ").slice(0, 16));
+      const gb = n => (n / 1e9).toFixed(2).replace(".", ",") + " GB";
+      const ix = ib.indexing;
+      el.innerHTML = (ib.waiting ? `<b>${ib.waiting}</b> Datei(en) im Eingang – werden übernommen, sobald sie ~1 Minute unverändert liegen:
+          <div class="muted" style="font-size:12px">${ib.files.map(f => esc(f[0]) + " (" + gb(f[1]) + ")").join("<br>")}</div>`
+          : "Eingang leer")
+        + (ib.last_run ? `<div class="muted">zuletzt ${t(ib.last_run)}: ${esc(ib.last_result)}</div>` : "")
+        + (ix ? `<div>Danach: <b>Einlesen läuft</b> – ${esc(ix.phase || "")} ${ix.total ? ix.done.toLocaleString("de-DE") + " / " + ix.total.toLocaleString("de-DE") : ""}
+          <span class="muted">(Vorschaubilder, Datum, Gesichter – erst dann erscheint es in der Zeitleiste)</span></div>` : "")
+        + (ib.last_check ? `<div class="muted" style="font-size:12px">zuletzt nachgesehen ${esc(ib.last_check.slice(11, 16))} Uhr</div>` : "");
+    };
+    inbox();
     $("#fgo", page).onclick = () => folder(false);
     let codeFor = null;
     $("#ic-login", page).onclick = async () => {
@@ -1238,6 +1332,8 @@ const routes = {
       if (!page.isConnected) return;
       let running = false;
       try { await refresh(); running = !!$("#jstop", page); } catch { /* nächster Versuch */ }
+      try { inboxStat(await api("/api/inbox")); } catch { /* nächster Versuch */ }
+      try { await icl(); } catch { /* nächster Versuch */ }
       clearTimeout(timer);
       timer = setTimeout(loop, running ? 1000 : 4000);
     };
@@ -1569,6 +1665,25 @@ function reportErrors(r) {
 }
 // Papierkorb-Aktionen mit vielen Dateien laufen auf dem Server im Hintergrund ({job: true}):
 // Fortschrittskarte mit Restzeit zeigen, auf das Ergebnis warten und es zurückgeben wie eine normale Antwort.
+// Album/Ereignis: Schalter „☁ iCloud“ (icloudsync.py)
+async function iclToggle(btn, kind, id, name) {
+  if (!btn) return;
+  let s;
+  try { s = await api("/api/icloudsync"); } catch { btn.remove(); return; }
+  if (!s.available) { btn.remove(); return; }
+  let on = s.flags.some(f => f.kind === kind && f.id === id);
+  const paint = () => { btn.textContent = on ? "☁ iCloud ✓" : "☁ iCloud"; btn.classList.toggle("on", on); };
+  paint();
+  btn.onclick = async () => {
+    const what = kind === "album" ? "Album" : "Ereignis";
+    if (!on && !await confirmBox(`Alle Fotos/Videos von „${name}“ nach iCloud hochladen – auch künftige, die dazukommen? ` +
+      "Private bleiben draußen, was schon in iCloud ist, wird erkannt. Ausschalten löscht in iCloud nichts.")) return;
+    await api("/api/icloudsync", { action: "flag", kind, id, on: !on });
+    on = !on; paint();
+    toast(on ? `${what} wird nach iCloud abgeglichen – Stand unter Import` : `${what} nicht mehr automatisch (bereits Hochgeladenes bleibt in iCloud)`, 5000);
+  };
+}
+
 async function apiOp(path, body) {
   const r = await api(path, body);
   if (!r || !r.job) return r;
@@ -2013,11 +2128,16 @@ async function runAction(act, ev) {
       "-",
       ctx.album ? ["rmalbum", `Aus Album „${ctx.albumName}“ entfernen`] : null,
       ctx.album && n === 1 ? ["cover", "Als Titelbild des Albums"] : null,
+      ctx.folder && n === 1 ? ["cfolder", `Als Titelbild des Ordners „${ctx.folderName}“`] : null,
+      ctx.event && n === 1 ? ["cevent", "Als Titelbild des Ereignisses"] : null,
+      ctx.person && n === 1 ? ["cperson", `Als Titelbild von ${ctx.personName}`] : null,
+      n === 1 && !ctx.trash ? ["cmonth", "Als Titelbild des Monats (Kalender)"] : null,
       ctx.trash ? null : ctx.hidden ? ["unhide", "Wieder einblenden"] : ["hide", "Ausblenden (nicht löschen)"],
       ctx.trash ? ["restore", "Wiederherstellen"] : ["del", "🗑 In den Papierkorb …"],
       ctx.trash ? ["purge", "Endgültig löschen …"] : null,
       "-",
       ["priv", "🔒 Als privat markieren"], ["unpriv", "Privat aufheben"],
+      ctx.trash ? null : ["icloud", "☁ Nach iCloud hochladen"],
     ].filter(Boolean);
     const r = ev.target.getBoundingClientRect();
     const p = popover(r.right - 230, r.bottom + 6, `<div class="menu">${items.map(x => x === "-" ? "<hr>" : `<div data-m="${x[0]}">${esc(x[1])}</div>`).join("")}</div>`);
@@ -2047,6 +2167,27 @@ async function runAction(act, ev) {
       }
       else if (m === "rmalbum") { await api(`/api/albums/${ctx.album}/remove`, { ids }); done(`${n} aus dem Album entfernt`, true); }
       else if (m === "cover") { await api(`/api/albums/${ctx.album}`, { cover: ids[0] }); done("Titelbild gesetzt"); }
+      else if (m === "icloud") {
+        try {
+          let r = await api("/api/icloudsync", { action: "push", ids });
+          if (r.confirm) {
+            if (!await confirmBox(`${r.confirm} der markierten Fotos sind privat. Trotzdem nach iCloud hochladen? Dort sind sie nicht geschützt.`)) return;
+            r = await api("/api/icloudsync", { action: "push", ids, force: true });
+          }
+          done(r.queued ? `${r.queued} Datei(en) für iCloud vorgemerkt (Live-Photo-Videos gehen mit) – Stand unter Import` : "War schon vorgemerkt");
+        } catch (e) { toast(e.message, 6000); }
+      }
+      else if (m === "cfolder" || m === "cevent" || m === "cmonth" || m === "cperson") {
+        try {
+          if (m === "cperson") { await api(`/api/persons/${ctx.person}`, { cover_item: ids[0] }); }
+          else {
+            const r = await api("/api/covers", m === "cmonth" ? { kind: "month", item: ids[0] }
+              : m === "cfolder" ? { kind: "folder", key: ctx.folder, item: ids[0] } : { kind: "event", key: String(ctx.event), item: ids[0] });
+            if (m === "cmonth") { const [y, mo] = r.key.split("-"); return done(`Titelbild für ${MONTHS[+mo - 1]} ${y} gesetzt`); }
+          }
+          done("Titelbild gesetzt");
+        } catch (e) { toast(e.message, 5000); }
+      }
       else if (m === "priv" || m === "unpriv") {
         if (m === "priv" && !await ensurePassword()) return;
         if (m === "unpriv" && !state.priv.unlocked && !await unlockDialog()) return;

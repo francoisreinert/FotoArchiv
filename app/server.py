@@ -883,9 +883,50 @@ def r_folders(h, p):
         return h.send_json({"path": path, "children": [], "direct": 0})
     kids = sorted((tree[c] for c in node["children"]), key=lambda n: n["name"].lower(),
                   reverse=bool(re.fullmatch(r"\d{4}", (tree[next(iter(node["children"]))]["name"] if node["children"] else ""))))
+    cc = custom_covers("folder", locked(h))
     h.send_json({"path": path, "name": node["name"], "direct": node["direct"], "total": node["total"],
-                 "children": [{"path": k["path"], "name": k["name"], "total": k["total"], "cover": k["cover"]}
-                              for k in kids]})
+                 "children": [{"path": k["path"], "name": k["name"], "total": k["total"],
+                               "cover": cc.get(k["path"], k["cover"])} for k in kids]})
+
+
+def custom_covers(kind, hide):
+    """Selbst gewählte Titelbilder {Schlüssel: Foto-id}; gelöschte nie, private nur entsperrt."""
+    out = {}
+    for key, iid, priv in db().execute(
+            "SELECT c.key, c.item_id, COALESCE(i.priv_eff,0) FROM covers c JOIN items i ON i.id = c.item_id "
+            "WHERE c.kind=? AND COALESCE(i.hidden,0) <> 2", (kind,)):
+        if not (hide and priv):
+            out[key] = iid
+    return out
+
+
+def r_cover_set(h, p):
+    """Titelbild festlegen: {kind: folder|month|event, key, item}; month ohne key = Monat des Fotos; item null = automatisch."""
+    b = h.body()
+    kind, item = b.get("kind"), b.get("item")
+    if kind not in ("folder", "month", "event"):
+        return h.send_json({"error": "unbekannte Art"}, 400)
+    c = db()
+    key = b.get("key")
+    if item is not None:
+        row = c.execute("SELECT taken FROM items WHERE id=?", (int(item),)).fetchone()
+        if not row:
+            return h.send_json({"error": "Foto nicht gefunden"}, 404)
+        if kind == "month" and not key:
+            if not row[0]:
+                return h.send_json({"error": "Das Foto hat kein Datum"}, 400)
+            key = row[0][:7]
+    if key is None or key == "":
+        if kind != "folder":
+            return h.send_json({"error": "Schlüssel fehlt"}, 400)
+        key = ""
+    key = str(key)
+    if item is None:
+        c.execute("DELETE FROM covers WHERE kind=? AND key=?", (kind, key))
+    else:
+        c.execute("INSERT OR REPLACE INTO covers(kind, key, item_id) VALUES(?,?,?)", (kind, key, int(item)))
+    c.commit()
+    h.send_json({"ok": True, "key": key})
 
 
 def r_persons(h, p):
@@ -936,6 +977,12 @@ def r_person_update(h, p, pid):
         c.execute("UPDATE persons SET hidden=? WHERE id=?", (1 if b["hidden"] else 0, pid))
     if "cover" in b:
         c.execute("UPDATE persons SET cover_face=? WHERE id=?", (int(b["cover"]), pid))
+    if "cover_item" in b:
+        f = c.execute("SELECT id FROM faces WHERE person_id=? AND item_id=? ORDER BY w * h DESC LIMIT 1",
+                      (pid, int(b["cover_item"]))).fetchone()
+        if not f:
+            return h.send_json({"error": "Auf diesem Foto ist die Person nicht markiert"}, 400)
+        c.execute("UPDATE persons SET cover_face=? WHERE id=?", (f[0], pid))
     c.commit()
     items = [r[0] for r in c.execute("SELECT DISTINCT item_id FROM faces WHERE person_id=?", (pid,))]
     import indexer
@@ -1086,7 +1133,8 @@ def r_calendar(h, p):
             if score > b[2]:
                 b[1], b[2] = iid, score
     ev = events_by_month()
-    h.send_json({k: {"count": v[0], "cover": v[1] if v[2] > -1e8 else None, "events": ev.get(k, [])}
+    cc = custom_covers("month", hide)
+    h.send_json({k: {"count": v[0], "cover": cc.get(k) or (v[1] if v[2] > -1e8 else None), "events": ev.get(k, [])}
                  for k, v in best.items()})
 
 
@@ -1122,6 +1170,7 @@ def r_albums(h, p):
             sub = next((k["cover"] for k in kids.get(a["id"], []) if k["cover"]), None)
             a["cover"] = sub
     events = []
+    ecc = custom_covers("event", hide)
     for eid, name, start, end, priv in c.execute(
             "SELECT id, name, start, end, COALESCE(private,0) FROM events ORDER BY start DESC").fetchall():
         rows = c.execute("SELECT id, COALESCE(priv_eff,0) FROM items WHERE taken >= ? AND taken <= ? AND dup_of IS NULL "
@@ -1129,6 +1178,8 @@ def r_albums(h, p):
                          (start[:10], end[:10] + " 23:59:59")).fetchall()
         open_rows = [r for r in rows if not r[1]] if hide else rows
         cover = open_rows[len(open_rows) // 3][0] if open_rows and not (hide and priv) else None
+        if cover and str(eid) in ecc:
+            cover = ecc[str(eid)]
         events.append({"id": eid, "name": name, "start": start, "end": end, "count": len(rows), "cover": cover,
                        "private": bool(priv)})
     hidden = c.execute("SELECT COUNT(*) FROM items WHERE hidden=1").fetchone()[0]
@@ -1705,8 +1756,103 @@ def r_import_folder(h, p):
         return h.send_json({"error": "Ordner oder Datei nicht gefunden"}, 400)
     if os.path.abspath(path).startswith(os.path.abspath(os.path.join(common.LIB_ROOT, importer.TARGET_ROOT))):
         return h.send_json({"error": "Dieser Ordner gehört schon zur Bibliothek"}, 400)
-    ok = importer.start(importer.import_folder, path, b.get("label") or None, b.get("albums"), bool(b.get("dry")))
+    ok = importer.start(importer.import_folder, path, b.get("label") or None, b.get("albums"), bool(b.get("dry")),
+                        bool(b.get("move")))
     h.send_json({"ok": ok} if ok else {"error": "Es läuft schon ein Import"})
+
+
+def r_icloudsync(h, p):
+    import icloudsync
+
+    h.send_json(icloudsync.status())
+
+
+def r_icloudsync_action(h, p):
+    import icloudsync
+
+    b = h.body()
+    a = b.get("action")
+    if a == "push":
+        ids = [int(i) for i in b.get("ids") or []]
+        if not icloudsync.available():
+            return h.send_json({"error": icloudsync.status().get("why", "iCloud für Windows fehlt")}, 400)
+        if not b.get("force"):
+            n_priv = db().execute("SELECT COUNT(*) FROM items WHERE priv_eff=1 AND id IN (%s)" % ",".join("?" * len(ids)),
+                                  ids).fetchone()[0] if ids else 0
+            if n_priv:
+                return h.send_json({"confirm": n_priv})
+        n = icloudsync.queue(ids)
+        threading.Thread(target=icloudsync.step, daemon=True).start()
+        return h.send_json({"ok": True, "queued": n})
+    if a == "flag":
+        if b.get("kind") not in ("album", "event"):
+            return h.send_json({"error": "unbekannt"}, 400)
+        icloudsync.set_flag(b["kind"], int(b["id"]), bool(b.get("on")))
+        if b.get("on"):
+            threading.Thread(target=icloudsync.step, daemon=True).start()
+        return h.send_json({"ok": True})
+    if a == "shared":
+        cfg = common.load_config()
+        cfg["icloud_shared_import"] = bool(b.get("on"))
+        common.save_config(cfg)
+        return h.send_json({"ok": True})
+    if a == "shared_now":
+        return h.send_json({"ok": True, "started": icloudsync.import_shared(force=True)})
+    if a == "run":
+        threading.Thread(target=icloudsync.step, daemon=True).start()
+        return h.send_json({"ok": True})
+    if a == "retry":
+        icloudsync.retry_errors()
+        threading.Thread(target=icloudsync.step, daemon=True).start()
+        return h.send_json({"ok": True})
+    h.send_json({"error": "unbekannt"}, 400)
+
+
+def r_inbox(h, p):
+    import importer
+    import inbox
+
+    cfg = common.load_config()
+    h.send_json(inbox.status() | {"targets": {"photo": importer.target_root("photo"), "video": importer.target_root("video")},
+                                  "custom": bool(cfg.get("import_targets"))})
+
+
+def r_inbox_action(h, p):
+    import inbox
+
+    b = h.body()
+    a = b.get("action")
+    if a == "check":
+        inbox.ensure()
+        return h.send_json({"ok": True, "started": inbox.check()})
+    if a == "open":
+        inbox.ensure()
+        path = inbox.folder() if b.get("where") != "done" else os.path.join(inbox.folder(), inbox.DONE)
+        os.makedirs(path, exist_ok=True)
+        if sys.platform == "win32":
+            os.startfile(path)
+        else:
+            subprocess.Popen(["open" if sys.platform == "darwin" else "xdg-open", path])
+        return h.send_json({"ok": True})
+    cfg = common.load_config()
+    if a == "enable":
+        cfg["inbox"] = bool(b.get("on"))
+        if cfg["inbox"]:
+            inbox.ensure()
+    elif a == "targets":
+        t = {}
+        for k in ("photo", "video"):
+            v = (b.get(k) or "").strip().strip("/\\")
+            if not v or ".." in v.replace("\\", "/").split("/") or os.path.isabs(v) or ":" in v:
+                return h.send_json({"error": "Bitte einen Ordnernamen innerhalb der Bibliothek angeben (z. B. Bilder)"}, 400)
+            if v.split("/")[0].split("\\")[0].lower() in common.ALWAYS_EXCLUDED:
+                return h.send_json({"error": "Dieser Ordner ist vom Einlesen ausgeschlossen"}, 400)
+            t[k] = v
+        cfg["import_targets"] = t
+    else:
+        return h.send_json({"error": "unbekannt"}, 400)
+    common.save_config(cfg)
+    h.send_json({"ok": True})
 
 
 def r_import_stop(h, p):
@@ -2817,6 +2963,10 @@ ROUTES = [
     ("GET", r"/api/import/status", r_import_status),
     ("POST", r"/api/import/folder", r_import_folder),
     ("POST", r"/api/import/stop", r_import_stop),
+    ("GET", r"/api/inbox", r_inbox),
+    ("GET", r"/api/icloudsync", r_icloudsync),
+    ("POST", r"/api/icloudsync", r_icloudsync_action),
+    ("POST", r"/api/inbox", r_inbox_action),
     ("GET", r"/api/fs", r_fs),
     ("POST", r"/api/icloud/login", r_icloud_login),
     ("POST", r"/api/icloud/code", r_icloud_code),
@@ -2869,6 +3019,7 @@ ROUTES = [
     ("GET", r"/api/persons", r_persons),
     ("POST", r"/api/persons", r_person_create),
     ("POST", r"/api/persons/(\d+)", r_person_update),
+    ("POST", r"/api/covers", r_cover_set),
     ("POST", r"/api/persons/(\d+)/merge", r_person_merge),
     ("POST", r"/api/persons/(\d+)/delete", r_person_delete),
     ("GET", r"/api/persons/(\d+)/faces", r_person_faces),
@@ -3054,6 +3205,18 @@ def main():
             threading.Thread(target=backup.auto_loop, daemon=True).start()
         except Exception as ex:
             print(" Sicherung nicht fortgesetzt:", ex)
+        try:
+            import icloudsync
+
+            threading.Thread(target=icloudsync.loop, daemon=True).start()
+        except Exception as ex:
+            print(" iCloud-Abgleich nicht gestartet:", ex)
+        try:
+            import inbox
+
+            threading.Thread(target=inbox.loop, daemon=True).start()
+        except Exception as ex:
+            print(" Eingangsordner nicht gestartet:", ex)
     threading.Timer(5, resume).start()
     try:
         srv.serve_forever()

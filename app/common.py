@@ -92,6 +92,7 @@ ALWAYS_EXCLUDED = {
     os.path.basename(BASE_DIR).lower(), "$recycle.bin", "system volume information", ".spotlight-v100",
     ".fseventsd", ".temporaryitems", ".trashes", ".documentrevisions-v100", ".claude", "htdocs",
     "fotoarchiv-papierkorb",  # gelöschte Fotos (trash.py)
+    "fotoarchiv-eingang",  # Eingangsordner (inbox.py) – wird importiert, nicht eingelesen
     "amazon photos",  # Kopien für die Amazon-Photos-App (webshare.py)
 }
 
@@ -344,6 +345,9 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
             con.execute("ALTER TABLE albums ADD COLUMN private INTEGER DEFAULT 0")
         if "private" not in {r[1] for r in con.execute("PRAGMA table_info(events)")}:
             con.execute("ALTER TABLE events ADD COLUMN private INTEGER DEFAULT 0")
+        # selbst gewählte Titelbilder: kind = folder (Pfad) | month (JJJJ-MM) | event (id); Alben: albums.cover,
+        # Personen: persons.cover_face
+        con.execute("CREATE TABLE IF NOT EXISTS covers (kind TEXT, key TEXT, item_id INTEGER, PRIMARY KEY(kind, key))")
         con.commit()
     return con
 

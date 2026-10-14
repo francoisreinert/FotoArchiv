@@ -12,6 +12,7 @@ direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Foto
 - **Videoschnitt** mit Zeitleiste, Übergängen, Originalton und Musik; Rendern auf allen Prozessorkernen
 - **Gesichtserkennung** auf dem eigenen Computer: Gesichter werden gruppiert, einmal benennen genügt
 - Alben, Ereignisse, private (passwortgeschützte) Fotos; Suche und Filter auch nur innerhalb eines Albums/Ereignisses
+- **Titelbild selbst wählen** für Alben, Ereignisse, Ordner, Personen und Kalender-Monate
 - **Duplikate** finden und aufräumen, Papierkorb zum Wiederherstellen (große Mengen mit Fortschritt im Hintergrund)
 - **360°-Fotos** (GoPro Fusion, Theta, Insta360, Photo Sphere) rundum ansehen – direkt im Browser
 - **Belichtungsreihen** (Bracketing) erkennen und als Stapel zeigen – nie als Duplikat behandelt
@@ -25,7 +26,13 @@ direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Foto
   Änderungen werden automatisch nachgezogen. Der Bucket bleibt privat (signierte Links), FotoArchiv warnt,
   wenn der Sicherungsordner ohne Schlüssel lesbar ist, und sperrt ihn auf Knopfdruck
 - Datum aus AVCHD-Camcordern (MTS) wird aus dem Videostrom gelesen
-- Import aus iCloud, Google Takeout, Ordnern, ZIP-Dateien
+- Import aus iCloud (auch mehrere Konten und geteilte Bibliothek), Google Takeout, Ordnern, ZIP-Dateien –
+  wahlweise kopieren oder verschieben; Fotos und Videos können in getrennte Ordner
+- **Eingangsordner**: Dateien einfach hineinkopieren (auch übers Netz) – FotoArchiv übernimmt sie von selbst,
+  erkennt Doppelte, macht aus Unterordnern Alben und hält Live Photos zusammen
+- **Zurück nach iCloud** (Windows, mit „iCloud für Windows“): einzelne Fotos oder ganze Alben/Ereignisse hochladen,
+  auch automatisch für neue Fotos; danach wird am PC der Speicher wieder freigegeben. **Geteilte iCloud-Alben**
+  werden als Alben importiert
 - Diashow (auch als Video), Teilen, aufs Handy per QR-Code, Samsung-Fernseher / The Frame
 - Ordner für die **Amazon-Photos-App** füllen (Album, Favoriten)
 - Übernahme aus Mylio (optional)

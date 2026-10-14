@@ -291,6 +291,8 @@ const P = {
     const list = filt(D.byDate).filter(r => r[2]);
     const cal = new Map();
     for (const r of list) { const k = r[2].slice(0, 7); const c = cal.get(k); if (c) c.n++; else cal.set(k, { n: 1, cover: r[0] }); }
+    const cm = (D.covers && D.covers.m) || {};
+    for (const [k, c] of cal) if (cm[k]) c.cover = cm[k];
     const evs = new Map();
     D.events.forEach(e => { if (!e[2]) return; for (let d = e[2].slice(0, 7); d <= (e[3] || e[2]).slice(0, 7); d = nextMonth(d)) (evs.get(d) || evs.set(d, []).get(d)).push(e); });
     const years = [...new Set([...cal.keys()].map(k => k.slice(0, 4)))].sort().reverse();
@@ -354,6 +356,8 @@ const P = {
       const seg = (pre ? f.slice(pre.length) : f).split("/")[0];
       const c = counts.get(seg); if (c) c.n++; else counts.set(seg, { n: 1, cover: r[0] });
     }
+    const cf = (D.covers && D.covers.f) || {};
+    for (const [s, c] of counts) if (cf[pre + s]) c.cover = cf[pre + s];
     const crumbs = path ? path.split("/").map((s, i, a) => `<a href="#/ordner?p=${encodeURIComponent(a.slice(0, i + 1).join("/"))}">${esc(s)}</a>`).join(" › ") : "";
     main().innerHTML = `<div class="crumbs"><a href="#/ordner">Ordner</a>${crumbs ? " › " + crumbs : ""}</div><h1>${esc(path.split("/").pop() || "Ordner")}</h1>
       <div class="cards">${[...counts].sort((a, b) => a[0].localeCompare(b[0], "de", { numeric: true })).map(([s, c]) => `<a class="card" href="#/ordner?p=${encodeURIComponent(pre + s)}">${imgTag(c.cover)}<div>📁 ${esc(s)}<small>${num(c.n)}</small></div></a>`).join("")}</div>
@@ -364,7 +368,7 @@ const P = {
   personen() {
     side("personen");
     main().innerHTML = `<h1>Personen <small>${D.persons.length}</small></h1><div class="cards">${D.persons.map(p => {
-      const cover = D.byDate.find(r => p[2].includes(r[0]));
+      const cover = p[3] ? [p[3]] : D.byDate.find(r => p[2].includes(r[0]));
       return `<a class="card round" href="#/person/${p[0]}">${cover ? imgTag(cover[0]) : "<img alt=''>"}<div>${esc(p[1])}<small>${num(p[2].length)}</small></div></a>`;
     }).join("")}</div>`;
     observe(main());

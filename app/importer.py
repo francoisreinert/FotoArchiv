@@ -27,6 +27,7 @@ RESUME_FILE = os.path.join(common.DATA_DIR, "import_resume.json")
 TMP_DIR = os.path.join(common.DATA_DIR, "_import_tmp")
 TRASH_DIRS = {"papierkorb", "trash", "bin", "corbeille", "recently deleted", "zuletzt gelöscht"}
 YEAR_DIR = re.compile(r"^(photos from|fotos von|fotos aus|photos de)\s+\d{4}$", re.I)
+PAIRS = {}  # (Quellordner, Namensstamm) -> Zielpfad des zuerst übernommenen Partners (Live Photos)
 
 
 # ------------------------------------------------------------- Fortschritt ----
@@ -40,6 +41,7 @@ class Job:
     def reset(self, title):
         # "running" bleibt unverändert: start() setzt es vor dem Thread, sonst sähe die Oberfläche
         # kurz "läuft nicht" und hörte auf, den Fortschritt abzufragen
+        PAIRS.clear()
         self.stop = False
         self.title = title
         self.phase = ""
@@ -159,8 +161,15 @@ def file_meta(path, kind):
     return {"taken": taken, "w": size[0], "h": size[1], "phash": media.dhash(im), "lat": ex.get("lat")}
 
 
-def dest_path(taken, name):
-    folder = os.path.join(LIB_ROOT, TARGET_ROOT, taken[:4] if taken else "Undatiert")
+def target_root(kind=None):
+    """Zielordner für neue Dateien (config „import_targets“: {"photo": "Bilder", "video": "Videos"})."""
+    t = common.load_config().get("import_targets") or {}
+    root = (t.get("video" if kind == "video" else "photo") or TARGET_ROOT).strip("/\\")
+    return root or TARGET_ROOT
+
+
+def dest_path(taken, name, kind=None):
+    folder = os.path.join(LIB_ROOT, target_root(kind), taken[:4] if taken else "Undatiert")
     os.makedirs(folder, exist_ok=True)
     base, ext = os.path.splitext(name)
     # Kein anderer Dateiname mit gleichem Stamm (IMG_1.HEIC/IMG_1.MOV/IMG_1.xmp würden sonst als Paar gelten)
@@ -302,32 +311,35 @@ def _iter_zip(zpath):
         JOB.note("Kein gültiges ZIP: " + os.path.basename(zpath))
         JOB.errors += 1
         return
-    names = z.namelist()
-    jsons = _json_index(names)
-    for info in z.infolist():
-        n = info.filename
-        if info.is_dir():
-            continue
-        d, _, base = n.rpartition("/")
-        parts = [p.lower() for p in d.split("/")]
-        if any(p in TRASH_DIRS for p in parts) or base.startswith("._"):
-            continue
-        ext = base.rsplit(".", 1)[-1].lower() if "." in base else ""
-        if not kind_for_ext(ext):
-            continue
+    try:
+        names = z.namelist()
+        jsons = _json_index(names)
+        for info in z.infolist():
+            n = info.filename
+            if info.is_dir():
+                continue
+            d, _, base = n.rpartition("/")
+            parts = [p.lower() for p in d.split("/")]
+            if any(p in TRASH_DIRS for p in parts) or base.startswith("._"):
+                continue
+            ext = base.rsplit(".", 1)[-1].lower() if "." in base else ""
+            if not kind_for_ext(ext):
+                continue
 
-        def opener(info=info, ext=ext):
-            os.makedirs(TMP_DIR, exist_ok=True)
-            fd, tmp = tempfile.mkstemp(suffix="." + ext, prefix="fa_imp_", dir=TMP_DIR)
-            with os.fdopen(fd, "wb") as out, z.open(info) as src:
-                shutil.copyfileobj(src, out, 1 << 20)
-            return tmp, True
-        j = _find_json(jsons.get(d), base)
-        sidecar = (lambda jn=(d + "/" + j if d else j): z.read(jn)) if j else None
-        # Schlüssel ohne ZIP-Namen: mehrteilige Takeouts (…-001.zip, …-002.zip) und spätere Exporte
-        # enthalten dieselben Pfade
-        yield Entry("z:%s|%d" % (common.norm(n), info.file_size), base, info.file_size,
-                    d.rpartition("/")[2], opener, sidecar, container=os.path.basename(zpath))
+            def opener(info=info, ext=ext):
+                os.makedirs(TMP_DIR, exist_ok=True)
+                fd, tmp = tempfile.mkstemp(suffix="." + ext, prefix="fa_imp_", dir=TMP_DIR)
+                with os.fdopen(fd, "wb") as out, z.open(info) as src:
+                    shutil.copyfileobj(src, out, 1 << 20)
+                return tmp, True
+            j = _find_json(jsons.get(d), base)
+            sidecar = (lambda jn=(d + "/" + j if d else j): z.read(jn)) if j else None
+            # Schlüssel ohne ZIP-Namen: mehrteilige Takeouts (…-001.zip, …-002.zip) und spätere Exporte
+            # enthalten dieselben Pfade
+            yield Entry("z:%s|%d" % (common.norm(n), info.file_size), base, info.file_size,
+                        d.rpartition("/")[2], opener, sidecar, container=os.path.basename(zpath))
+    finally:
+        z.close()  # sonst lässt Windows die ZIP-Datei nicht verschieben
 
 
 def parse_takeout_json(data):
@@ -352,12 +364,13 @@ def parse_takeout_json(data):
     return out
 
 
-def import_folder(root, label=None, albums=None, dry=False):
-    """Ordner/ZIP importieren. albums=None: bei Google Takeout automatisch Alben aus Ordnernamen."""
+def import_folder(root, label=None, albums=None, dry=False, move=False):
+    """Ordner/ZIP importieren. albums=None: bei Google Takeout automatisch Alben aus Ordnernamen.
+    move: neue Dateien verschieben statt kopieren (schon Vorhandenes bleibt in der Quelle liegen)."""
     JOB.reset("Import: " + os.path.basename(root.rstrip("\\/")))
     JOB.running = True
     if not dry:
-        _set_resume({"type": "folder", "path": root, "label": label, "albums": albums})
+        _set_resume({"type": "folder", "path": root, "label": label, "albums": albums, "move": move})
     con = connect()
     try:
         JOB.phase = "Dateien suchen"
@@ -386,7 +399,7 @@ def import_folder(root, label=None, albums=None, dry=False):
                 continue
             album = e.dirname if albums and e.dirname and not YEAR_DIR.match(e.dirname) else None
             try:
-                _import_entry(e, lib, ledger, tag, album, dry)
+                _import_entry(e, lib, ledger, tag, album, dry, move)
             except Exception as ex:  # eine kaputte Datei stoppt den Import nicht
                 JOB.errors += 1
                 JOB.note("Fehler bei %s: %s" % (e.name, ex))
@@ -404,7 +417,54 @@ def import_folder(root, label=None, albums=None, dry=False):
         _finish(dry)
 
 
-def _import_entry(e, lib, ledger, tag, album, dry):
+def _pair_dest(partner, name):
+    if not partner:
+        return None
+    d = os.path.dirname(partner)
+    dest = os.path.join(d, os.path.splitext(os.path.basename(partner))[0] + os.path.splitext(name)[1])
+    return None if os.path.exists(dest) else dest
+
+
+def _photo_sibling(path):
+    stem = os.path.splitext(os.path.basename(path))[0].lower()
+    try:
+        return any(os.path.splitext(f)[0].lower() == stem and kind_for_ext(f.rsplit(".", 1)[-1].lower()) in ("photo", "raw")
+                   for f in os.listdir(os.path.dirname(path)) if "." in f)
+    except OSError:
+        return False
+
+
+def _copy(src, dest, name):
+    """Wie shutil.copy2, aber mit Fortschritt (JOB.bytes, Phase) – große Videos brauchen Minuten."""
+    phase = JOB.phase
+    JOB.phase = "Kopiere %s (%.1f GB)" % (name, os.path.getsize(src) / 1e9) if os.path.getsize(src) > 50e6 else phase
+    try:
+        with open(src, "rb") as fi, open(dest, "wb") as fo:
+            while True:
+                b = fi.read(8 << 20)
+                if not b:
+                    break
+                fo.write(b)
+                JOB.bytes += len(b)
+                if JOB.stop:
+                    raise InterruptedError("abgebrochen")
+        shutil.copystat(src, dest)
+    except BaseException:
+        try:
+            os.remove(dest)
+        except OSError:
+            pass
+        raise
+    finally:
+        JOB.phase = phase
+
+
+def _seen_as(path):
+    return ("früher endgültig gelöscht", "") if path == DELETED else ("schon vorhanden", path)
+
+
+def _import_entry(e, lib, ledger, tag, album, dry, move=False):
+    """Eine Datei übernehmen. Liefert (Ergebnis, Pfad in der Bibliothek). move: verschieben statt kopieren."""
     kind = kind_for_ext(e.name.rsplit(".", 1)[-1].lower())
     side = parse_takeout_json(e.sidecar()) if e.sidecar else {}
     # Schnelltest ohne Auspacken: gleicher Name und gleiche Größe
@@ -413,7 +473,7 @@ def _import_entry(e, lib, ledger, tag, album, dry):
         JOB.existing += 1
         if not dry:
             ledger.put(e.key, "exists", quick, tag, album)
-        return
+        return _seen_as(quick)
     local, temp = e.opener()
     try:
         try:
@@ -426,17 +486,24 @@ def _import_entry(e, lib, ledger, tag, album, dry):
             JOB.existing += 1
             if not dry:
                 ledger.put(e.key, "exists", match, tag, album)
-            return
+            return _seen_as(match)
         JOB.new += 1
         if dry:
-            return
+            return "neu", ""
         _check_space(e.size)
-        dest = dest_path(taken, e.name)
-        if temp:
+        # Live Photo (Foto + gleichnamiges Video in der Quelle): beide in denselben Ordner mit gleichem Namensstamm,
+        # das Video nicht in den Videoordner
+        pkey = None if temp else (os.path.dirname(local).lower(), os.path.splitext(e.name)[0].lower())
+        dest = _pair_dest(PAIRS.get(pkey), e.name) if pkey else None
+        if not dest:
+            dest = dest_path(taken, e.name, "photo" if kind == "video" and pkey and _photo_sibling(local) else kind)
+        if pkey:
+            PAIRS[pkey] = dest
+        if temp or move:
             shutil.move(local, dest)
             local = None
         else:
-            shutil.copy2(local, dest)
+            _copy(local, dest, e.name)
         if taken and not m["taken"]:
             ts = time.mktime(_ts(taken).timetuple())
             os.utime(dest, (ts, ts))
@@ -447,9 +514,11 @@ def _import_entry(e, lib, ledger, tag, album, dry):
         rel = to_rel(dest)
         lib.add(rel, os.path.basename(dest), kind, e.size, taken, m["w"], m["h"], m["phash"])
         ledger.put(e.key, "imported", rel, tag, album)
-        JOB.bytes += e.size
+        if temp or move:
+            JOB.bytes += e.size  # beim Kopieren zählt _copy laufend mit
         if JOB.new <= 30 or JOB.new % 50 == 0:
             JOB.note("Neu: %s → %s" % (e.name, rel.rsplit("/", 1)[0]))
+        return "neu", rel
     finally:
         if temp and local and os.path.exists(local):
             os.remove(local)
@@ -798,7 +867,7 @@ def _icloud_asset(api, asset, ledger, lib, tag, since_dt, AssetItemType, AssetVe
             JOB.existing += 1
             ledger.put(asset.id, "exists", match, tag)
             return
-        dest = dest_path(file_taken, name)
+        dest = dest_path(file_taken, name)  # ohne Art: Live-Photo-Videos bleiben neben ihrem Foto
         shutil.move(tmp, dest)
         ts = time.mktime(_ts(file_taken).timetuple())
         os.utime(dest, (ts, ts))
@@ -842,7 +911,7 @@ def resume_pending():
         start(run_icloud, info["id"], info.get("since"))
         return "iCloud"
     if info.get("type") == "folder" and os.path.exists(info.get("path") or ""):
-        start(import_folder, info["path"], info.get("label"), info.get("albums"))
+        start(import_folder, info["path"], info.get("label"), info.get("albums"), False, bool(info.get("move")))
         return info["path"]
     _set_resume(None)
     return None
