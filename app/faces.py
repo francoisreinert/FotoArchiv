@@ -51,12 +51,14 @@ def person_scores(emb, lab_emb, lab_pid, persons):
 
 
 def recompute(con, progress=None):
+    """Erst alles nur lesend berechnen (dauert Minuten), dann in einem kurzen Schreibvorgang übernehmen –
+    sonst ist der Katalog währenddessen gesperrt („database is locked“ in der Oberfläche)."""
     if progress:
         progress.set_phase("Personen erkennen")
-    con.execute("UPDATE faces SET person_id=NULL, source='det' WHERE source='auto'")
-    con.execute("UPDATE faces SET sugg_person=NULL, sugg_score=NULL, cluster=NULL")
-    data = _load(con)
+    data = _load(con)  # _load wertet 'auto' schon als unbenannt
     if data is None:
+        con.execute("UPDATE faces SET person_id=NULL, source='det' WHERE source='auto'")
+        con.execute("UPDATE faces SET sugg_person=NULL, sugg_score=NULL, cluster=NULL")
         con.commit()
         return
     ids, pid, src, rej, px, score, emb, dup = data
@@ -84,10 +86,6 @@ def recompute(con, progress=None):
             elif s[best] >= SUGGEST_THRESHOLD:
                 sugg.append((persons[best], float(s[best]), int(ids[i])))
                 assigned[i] = True
-    con.executemany("UPDATE faces SET person_id=?, source='auto', sugg_score=? WHERE id=?", auto)
-    con.executemany("UPDATE faces SET sugg_person=?, sugg_score=? WHERE id=?", sugg)
-    con.commit()
-
     # Unbekannte Gesichter gruppieren
     if progress:
         progress.set_phase("Unbekannte Gesichter gruppieren")
@@ -95,6 +93,15 @@ def recompute(con, progress=None):
     cand = cand[np.argsort(-(score[cand] * np.minimum(px[cand], 200)))]
     clusters = cluster(emb[cand])
     upd = [(int(c), int(ids[cand[k]])) for k, c in enumerate(clusters) if c >= 0]
+
+    # Übernehmen – von Hand inzwischen Bestätigtes/Ignoriertes bleibt unangetastet
+    if progress:
+        progress.set_phase("Personen übernehmen")
+    con.execute("UPDATE faces SET person_id=NULL, source='det' WHERE source='auto'")
+    con.execute("UPDATE faces SET sugg_person=NULL, sugg_score=NULL, cluster=NULL")
+    con.executemany("UPDATE faces SET person_id=?, source='auto', sugg_score=? WHERE id=? "
+                    "AND COALESCE(source,'det') NOT IN ('mylio','manual','ignored')", auto)
+    con.executemany("UPDATE faces SET sugg_person=?, sugg_score=? WHERE id=?", sugg)
     con.executemany("UPDATE faces SET cluster=? WHERE id=?", upd)
     _covers(con)
     con.commit()
