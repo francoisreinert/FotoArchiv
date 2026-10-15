@@ -4,8 +4,10 @@
 
 Fotoverwaltung im Browser – ohne Cloud, ohne Abo, ohne Installation. Läuft unter Windows und macOS
 direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Fotos, wo sie sind.
+Oberfläche auf **Deutsch und Englisch**. *[English summary below](#english)*
 
 - Zeitleiste, Kalender, Ordner, Karte, Favoriten, Volltextsuche (Ort, Monat, Kamera, Stichwort …)
+- Betrachter mit **Vollbild** und Blättern; **Diashow** in Reihenfolge alt → neu, neu → alt oder zufällig
 - Filter nach Fotos/Videos und **Kamera** (z. B. alle GoPro-Aufnahmen), auch innerhalb von Alben, Jahren, Ordnern
 - Mehrere Fotoordner: externe Platten, **NAS**, lokale Ordner – gemeinsam durchsuchbar
 - **Fotobearbeitung** (zuschneiden, begradigen, Licht, Farbe, Tiefen/Lichter – Original bleibt unverändert)
@@ -36,6 +38,8 @@ direkt aus einem Ordner (auch von einer externen Festplatte) und lässt die Foto
 - Diashow (auch als Video), Teilen, aufs Handy per QR-Code, Samsung-Fernseher / The Frame
 - Ordner für die **Amazon-Photos-App** füllen (Album, Favoriten)
 - Übernahme aus Mylio (optional)
+- **Deutsch oder Englisch** umschaltbar; Einstellungen (Bibliothek, Import, Sicherung) übersichtlich gruppiert,
+  jeder Punkt aufklappbar mit kurzer Erklärung
 
 ## So sieht es aus
 
@@ -73,7 +77,37 @@ FotoArchiv ist ein privates Freizeitprojekt ohne kommerzielle Absichten – Mita
 - **Fehler oder Idee?** Unter [Issues](../../issues) beschreiben (gern mit Bildschirmfoto, Windows/Mac-Version).
 - **Fragen, Erfahrungen, „ich würde gern mitmachen“:** [Discussions](../../discussions).
 - **Selbst etwas verbessert?** Gern als Pull Request. Oberfläche und Texte sind deutsch; der Code ist bewusst
-  ohne Frameworks gehalten (Python-Standardbibliothek + Bildverarbeitung, Vanilla JS).
+  ohne Frameworks gehalten (Python-Standardbibliothek + Bildverarbeitung, Vanilla JS). Die Texte stehen deutsch
+  im Code; die englische Oberfläche kommt aus `app/static/i18n_en.js` (Wörterbuch) und `i18n.js`.
+
+## English
+
+**FotoArchiv** is a photo manager that runs in your browser – no cloud, no subscription, no installation.
+It runs on Windows and macOS straight from a folder (also from an external drive) and leaves your photos where
+they are. The interface is available in **English and German** (Settings › Library › Language, or open
+`http://127.0.0.1:8765/?lang=en`).
+
+- Timeline, calendar, folders, map, favorites, full-text search (place, month, camera, keyword …),
+  filter by photo/video and **camera**; viewer with full screen; slideshows (old → new, new → old, shuffle)
+- Several photo folders: external drives, **NAS**, local folders – searchable together
+- **Photo editing** (crop, straighten, light, color – the original stays untouched) and a **video editor**
+  with timeline, transitions, original audio and music, rendering on all CPU cores
+- **Face recognition** on your own computer – faces are grouped, naming once is enough
+- Albums, events, **private** (password-protected) photos, custom **cover images**
+- Find and clean up **duplicates**, trash with restore, **exposure brackets** as stacks, **360° photos**,
+  **document photos** (letters, receipts, screenshots) sorted out of the timeline
+- **Import** from iCloud (several accounts, shared library), Google Takeout, folders, ZIP files – copy or move;
+  an **inbox folder** imports everything you drop into it automatically
+- **Back to iCloud** (Windows, via “iCloud for Windows”): upload photos, albums or events, local space is freed
+  afterwards; **shared iCloud albums** are imported as albums
+- **Backup to S3** (Amazon S3 or S3-compatible storage such as MinIO): in the background, resumable, with
+  restore; albums as **web pages**; an **archive view** in the bucket to browse the whole collection without
+  FotoArchiv, private photos encrypted (AES-256)
+- Samsung TV / The Frame, phone via QR code, Amazon Photos folder, optional import from Mylio
+
+**Download:** get `FotoArchiv.zip` from [Releases](../../releases), unzip, start
+`FotoArchiv starten (Windows).cmd` (Windows) or `FotoArchiv.app` (Mac), choose your photo folder and click
+“Update library”. The detailed manual (LIESMICH.txt) is in German. Licensed under GPL-3.0.
 
 ## Lizenz und Haftung
 

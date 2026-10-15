@@ -17,7 +17,8 @@ routes.sicherung = async function () {
   state.hasS3 = has;
   const tsel = (id, cur) => `<select id="${id}">${cfg.targets.map(t => `<option value="${t.id}"${t.id === cur ? " selected" : ""}>${esc(t.name)}</option>`).join("")}</select>`;
   page.innerHTML = `<h1>Sicherung</h1>
-    <div class="card"><h2>☁ Sicherung auf S3</h2>
+    <p class="intro">Fotos, Videos und Katalog auf einem S3-Speicher sichern, zurückholen und als Webseite teilen. Klicke auf einen Punkt, um ihn aufzuklappen.</p>
+    <div class="card" data-fold="s3"${has ? " data-open" : ""}><h2>☁ Sicherung auf S3</h2>
       ${has ? `<p class="muted">Alle Fotos, Videos und Begleitdateien mit gleicher Ordnerstruktur – ohne FotoArchiv lesbar – plus Katalog
         (Alben, Personen, Bearbeitungen). Nur Neues und Geändertes wird hochgeladen; große Dateien in Teilen. Einmal starten, läuft im Hintergrund
         weiter (auch nach einem Neustart). Gelöschtes bleibt in der Sicherung, außer du schaltest es unten um.</p>
@@ -38,19 +39,19 @@ routes.sicherung = async function () {
         <a id="bk-vsave" href="#" title="Seite lokal speichern – funktioniert auch ohne FotoArchiv">index.html speichern</a></div>
       <div id="bk-expo"></div><div id="bk-status"></div><div id="bk-orphans"></div>` : `<p>Noch kein Ziel eingerichtet – unten „+ Ziel hinzufügen“ (Amazon S3 oder eigener S3-Speicher wie StorageGRID, MinIO …).</p>`}
     </div>
-    <div class="card"><h2>Ziele</h2>
+    <div class="card" data-fold="targets"${has ? "" : " data-open"}><h2>Ziele</h2>
       <div id="bk-targets">${cfg.targets.map(t => `<div class="bk-t"><b>${esc(t.name)}</b>
         <span class="muted">${esc(t.endpoint || "Amazon S3 " + (t.region || ""))} · Bucket ${esc(t.bucket)}${t.prefix ? " · Ordner " + esc(t.prefix) : ""}${t.storage_class ? " · " + esc(t.storage_class) : ""}</span>
         <span style="flex:1"></span><button data-edit="${t.id}">Bearbeiten</button><button data-del="${t.id}" class="danger">Entfernen</button></div>`).join("") || '<div class="muted">keine</div>'}</div>
       <div class="row" style="margin-top:10px"><button id="bk-add">+ Ziel hinzufügen</button></div>
     </div>
-    ${has ? `<div class="card"><h2>⤓ Wiederherstellen</h2>
+    ${has ? `<div class="card" data-fold="restore"><h2>⤓ Wiederherstellen</h2>
       <p class="muted">Ordner aus der Sicherung zurückholen – an den Originalplatz (nur was fehlt, nichts wird überschrieben) oder in einen anderen Ordner.
         Abgebrochene Downloads laufen an derselben Stelle weiter.</p>
       <div class="row">Quelle (Sicherung) ${tsel("rs-target", b.target)}</div><div id="rs-browser" class="bk-browser"></div>
       <div class="row" style="margin-top:10px"><button id="rs-cat">Katalog aus der Sicherung …</button>
         <span class="muted">z. B. nach Plattentausch: Alben, Personen und Bearbeitungen zurückholen</span></div></div>
-    <div class="card"><h2>🌐 Alben als Webseite</h2>
+    <div class="card" data-fold="web"><h2>🌐 Alben als Webseite</h2>
       <p class="muted">Im Album oben „🌐 Webseite“: legt eine Seite mit allen Fotos (ohne private) im Bucket an. Der Link ist 7 Tage gültig
         und lässt sich erneuern – oder dauerhaft, wenn der Bucket öffentliches Lesen für <code>FotoArchiv-Web/</code> erlaubt.
         Wer den Link öffnet, muss den S3-Speicher erreichen können (bei einem Speicher nur im Firmen-/Heimnetz also nur dort).</p>
@@ -59,7 +60,7 @@ routes.sicherung = async function () {
         <span style="flex:1"></span>${s.url ? `<button data-copy="${esc(s.url)}">Link kopieren</button><a href="${esc(s.url)}" target="_blank"><button>Öffnen</button></a>` : ""}
         ${s.mode === "link" ? `<button data-renew="${s.id}">Erneuern</button>` : ""}<button data-wdel="${s.id}" class="danger">Entfernen</button></div>`).join("")
         : '<div class="muted">Noch keine.</div>'}</div></div>` : ""}
-    <div class="card"><h2>Amazon Photos</h2>
+    <div class="card" data-fold="amazon"><h2>Amazon Photos</h2>
       <p class="muted">Amazon bietet keine offene Schnittstelle mehr – hochladen kann nur die <b>Amazon-Photos-App</b> (Windows/Mac). Prime: Fotos in voller
         Auflösung unbegrenzt, Videos nur 5 GB. Verwalten (Alben usw.) geht nur in Amazon Photos selbst.</p>
       <p><b>Ganze Bibliothek:</b> in der App unter „Sicherung“ diese Ordner hinzufügen und „nur Fotos“ wählen:</p>
@@ -68,6 +69,7 @@ routes.sicherung = async function () {
         bei jedem Lauf nur Neues. Im Album oben „Amazon“; hier für die Favoriten:</p>
       <div class="row"><button id="amz-fav">★ Favoriten in den Amazon-Ordner</button><span class="muted" id="amz-dest"></span></div></div>`;
 
+  foldCards(page);
   // Sicherung: Einstellungen speichern bei jeder Änderung
   const saveSettings = () => api("/api/backup/settings", {
     target: $("#bk-target").value, videos: $("#bk-videos").checked, dups: $("#bk-dups").checked, previews: $("#bk-previews").checked,

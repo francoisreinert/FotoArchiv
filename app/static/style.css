@@ -60,6 +60,26 @@ body.filters-open #layout { top: calc(var(--top) + 56px); }
 #side > a { display: block; padding: 8px 12px; border-radius: 8px; color: var(--text); }
 #side > a:hover { background: var(--panel2); }
 #side > a.active { background: #22344a; color: #cfe5ff; }
+/* Einstellungen als aufklappbare Gruppe */
+.navgrp { margin-top: 6px; border-top: 1px solid var(--line); padding-top: 6px; }
+.navhead { display: block; width: 100%; text-align: left; background: none; border: 0; padding: 8px 12px; border-radius: 8px; color: var(--text); font: inherit; cursor: pointer; }
+.navhead:hover { background: var(--panel2); }
+.navsub { display: none; }
+.navgrp.open .navsub { display: block; }
+.navsub a { display: block; padding: 6px 12px 6px 30px; border-radius: 8px; color: var(--text); }
+.navsub a:hover { background: var(--panel2); }
+.navsub a.active { background: #22344a; color: #cfe5ff; }
+.fold-i { display: inline-block; width: 1em; color: var(--muted); transition: transform .15s; }
+.navgrp.open .navhead .fold-i, .card[data-fold]:not(.folded) > h2 .fold-i { transform: rotate(90deg); }
+/* Karten auf den Einstellungsseiten: zugeklappt nur Titel + Kurzhilfe */
+.card[data-fold] > h2 { cursor: pointer; user-select: none; }
+.card[data-fold] > h2:hover { color: #cfe5ff; }
+.card.folded > :not(h2):not(.cardhelp) { display: none !important; }
+.card.folded { padding-bottom: 12px; }
+.card.folded > h2 { margin-bottom: 4px; }
+.cardhelp { color: var(--muted); font-size: 13px; margin: -4px 0 12px 1.2em; }
+.card.folded > .cardhelp { margin-bottom: 0; }
+.page .intro { color: var(--muted); font-size: 14px; margin: -6px 0 16px; max-width: 900px; line-height: 1.5; }
 #years { margin-top: 14px; border-top: 1px solid var(--line); padding-top: 8px; }
 #years a { display: flex; justify-content: space-between; padding: 3px 12px; color: var(--muted); font-size: 13px; border-radius: 6px; }
 #years a:hover { background: var(--panel2); color: var(--text); }

@@ -148,7 +148,7 @@ def build(target, zip_it=True):
         shutil.rmtree(out)
     ign = shutil.ignore_patterns("__pycache__", "*.pyc", *SKIP_APP)
     shutil.copytree(os.path.join(BASE, "app"), os.path.join(out, "app"), ignore=ign)
-    for f in ("static/backup.js", "server.py", "backup.py"):
+    for f in ("static/backup.js", "static/i18n_en.js", "server.py", "backup.py"):
         strip_local(os.path.join(out, "app", *f.split("/")))
     shutil.copytree(os.path.join(BASE, "models"), os.path.join(out, "models"))
     shutil.copytree(os.path.join(BASE, "runtime"), os.path.join(out, "runtime"))

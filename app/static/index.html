@@ -5,6 +5,8 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>FotoArchiv</title>
 <link rel="stylesheet" href="/style.css">
+<script src="/i18n_en.js"></script>
+<script src="/i18n.js"></script>
 <link rel="icon" href="/icon.svg" type="image/svg+xml">
 <link rel="apple-touch-icon" href="/icon.png">
 </head>
@@ -51,12 +53,17 @@
     <a href="#/karte" data-nav="karte">Karte</a>
     <a href="#/favoriten" data-nav="favoriten">Favoriten</a>
     <a href="#/dokumente" data-nav="dokumente">Dokumente</a>
-    <a href="#/video" data-nav="video">Videoschnitt</a>
-    <a href="#/import" data-nav="import">Import</a>
-    <a href="#/einstellungen" data-nav="einstellungen">Bibliothek</a>
     <a href="#/duplikate" data-nav="duplikate">Duplikate</a>
+    <a href="#/video" data-nav="video">Videoschnitt</a>
     <a href="#/papierkorb" data-nav="papierkorb">Papierkorb</a>
-    <a href="#/sicherung" data-nav="sicherung">Sicherung</a>
+    <div class="navgrp" id="navset">
+      <button class="navhead" title="Bibliothek, Import und Sicherung"><span class="fold-i">▸</span> ⚙ Einstellungen</button>
+      <div class="navsub">
+        <a href="#/einstellungen" data-nav="einstellungen">Bibliothek</a>
+        <a href="#/import" data-nav="import">Import</a>
+        <a href="#/sicherung" data-nav="sicherung">Sicherung</a>
+      </div>
+    </div>
     <div id="years"></div>
   </nav>
   <main id="main"></main>

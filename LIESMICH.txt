@@ -54,10 +54,18 @@ FUNKTIONEN
   Karte        Fotos mit GPS auf der Karte (braucht Internet für die Kartenbilder)
   Favoriten    Stern im Betrachter (Taste F); Bewertungen ab 4 Sternen (z. B. aus Lightroom) zählen auch
   Vollbild     im Betrachter ⛶, Taste V oder Doppelklick aufs Foto; ← → blättert weiter, Esc beendet
-  Bibliothek   Neue Fotos einlesen ("Bibliothek aktualisieren"), Ordnerauswahl
   Duplikate    Gleiche Fotos/Videos nebeneinander; die bessere Datei behalten, Rest in den Papierkorb
                (siehe DUPLIKATE)
+  Videoschnitt siehe VIDEOSCHNITT
   Papierkorb   Gelöschte Fotos, Videos und Ordner (siehe LÖSCHEN)
+  ⚙ Einstellungen (in der Seitenleiste aufklappen):
+     Bibliothek   Fotoordner, neue Fotos einlesen ("Bibliothek aktualisieren"), Ordnerauswahl,
+                  Fernseher, Privat, Sprache
+     Import       Eingangsordner, Ordner/ZIP, iCloud, zurück nach iCloud
+     Sicherung    S3-Sicherung, Wiederherstellen, Alben als Webseite, Amazon Photos
+     Jeder Punkt dort ist zugeklappt und zeigt nur eine kurze Erklärung – anklicken zum Aufklappen.
+  Sprache      Deutsch oder Englisch: Einstellungen › Bibliothek › "Sprache · Language"
+               (ohne Einstellung richtet sie sich nach der Browsersprache; Adresse mit ?lang=en geht auch).
 
   Betrachter:  Pfeiltasten blättern, I = Infos, G = Gesichter, F = Favorit, R = drehen, Esc = schließen,
                Entf = in den Papierkorb

@@ -1109,24 +1109,37 @@ const routes = {
     const page = document.createElement("div");
     page.className = "page";
     main.appendChild(page);
-    page.innerHTML = `<h1>Import <small>neue Fotos auf die Platte holen – bereits vorhandene werden erkannt und übersprungen</small></h1>
+    page.innerHTML = `<h1>Import</h1>
+      <p class="intro">Neue Fotos auf die Platte holen – bereits vorhandene werden erkannt und übersprungen. Klicke auf einen Punkt, um ihn aufzuklappen.</p>
       <div class="card" id="jobcard" hidden></div>
-      <div class="card" id="inbox"><h2>Eingangsordner</h2>
+      <div class="card" id="inbox" data-fold="inbox"><h2>Eingangsordner</h2>
         <p class="help">Neue Fotos und Videos einfach in diesen Ordner kopieren (auch übers Netz, vom Mac oder Handy) – FotoArchiv sieht jede Minute nach,
         wartet, bis eine Datei fertig kopiert ist, und <b>verschiebt</b> sie in die Bibliothek (auf derselben Platte sofort, ohne doppelten Platz).
         Was schon im Archiv ist, wird erkannt und landet in <b>_erledigt/Datum</b>, mit einem Protokoll, was wohin kam. Dort wird nichts gelöscht – den Ordner leerst du selbst.
         <b>Unterordner werden zu Alben</b> (Eingang/Urlaub Sylt/… → Album „Urlaub Sylt“), ZIP-Dateien werden ausgepackt.</p>
         <div id="ib-body" class="muted">…</div>
       </div>
-      <div class="card" id="icl"><h2>Nach iCloud zurück & geteilte Alben <small class="muted">über „iCloud für Windows“</small></h2>
-        <p class="help">FotoArchiv legt Fotos in den Ordner von iCloud für Windows; sobald sie hochgeladen sind, wird dort der Speicher
-        freigegeben (das Foto bleibt in iCloud, belegt am PC nichts). Was schon in iCloud ist, wird erkannt und nicht doppelt geschickt.
-        <b>Im iCloud-Ordner löscht FotoArchiv nie etwas</b> – Löschen dort würde auch in iCloud löschen. Alben, Personen und Stichwörter
-        übernimmt Apple so nicht. Hochladen: Fotos markieren › „…“ › „Nach iCloud“, oder bei einem Album/Ereignis oben „☁ iCloud“
-        einschalten – dann gehen auch künftige Fotos darin von selbst nach iCloud (private nie).</p>
-        <div id="icl-body" class="muted">…</div>
+      <div class="card" data-fold="zip"><h2>Ordner oder ZIP – Google Takeout, Amazon Fotos, Handy, SD-Karte …</h2>
+        <div class="form">
+          <label>Quelle</label><div class="row" style="flex-wrap:nowrap"><input type="text" id="fp" placeholder="Ordner oder .zip wählen" style="flex:1"><button id="fpb">Durchsuchen …</button></div>
+          <label>Herkunft</label><input type="text" id="fl" placeholder="z. B. Google Fotos, Amazon Fotos (optional)">
+          <label>Alben</label><label style="color:var(--text)"><input type="checkbox" id="fa"> Unterordner als Alben übernehmen (bei Google Takeout automatisch)</label>
+          <label>Quelle</label><label style="color:var(--text)"><input type="checkbox" id="fm"> neue Dateien <b>verschieben</b> statt kopieren
+            <span class="muted">(spart Platz; was schon im Archiv ist, bleibt in der Quelle liegen)</span></label>
+          <span></span><div class="row"><button id="fdry">Vorschau</button><button class="primary" id="fgo">Importieren</button></div>
+        </div>
+        <details class="help"><summary style="cursor:pointer">So bekommst du deine Fotos von Google und Amazon</summary>
+          <b>Google Fotos</b> (Google erlaubt seit 2025 keinen direkten Zugriff mehr):
+          <ol><li>takeout.google.com öffnen, „Auswahl aufheben“, nur <b>Google Fotos</b> ankreuzen.</li>
+          <li>„Exporthäufigkeit“: <b>alle 2 Monate für 1 Jahr</b> – dann kommt der Export automatisch per Mail.</li>
+          <li>Dateityp ZIP, Größe 50 GB. Die ZIP-Dateien herunterladen (müssen nicht entpackt werden).</li>
+          <li>Hier den Download-Ordner wählen und „Importieren“ – auch bei jedem weiteren Export werden nur neue Fotos übernommen.
+          Datum und Ort aus Googles Begleitdateien bleiben erhalten, Google-Alben werden zu Alben.</li></ol>
+          <b>Amazon Fotos</b> (keine offizielle Schnittstelle): auf amazon.de/photos Fotos markieren → Herunterladen, oder mit der
+          Amazon-Photos-App für Windows/Mac einen Ordner herunterladen lassen. Dann diesen Ordner hier importieren.
+        </details>
       </div>
-      <div class="card"><h2>iCloud Fotos</h2>
+      <div class="card" data-fold="icloud"><h2>iCloud Fotos</h2>
         <p class="help">Holt neue Fotos und Videos aus iCloud, auch aus einer <b>geteilten Bibliothek</b> (z. B. wenn jemand aus der Familie seine Bibliothek mit dir teilt).
         Was schon auf der Platte liegt, wird anhand von Name, Größe, Aufnahmezeit und Bildmaßen erkannt und gar nicht erst heruntergeladen.
         Neue Dateien landen in <b>Bilder/Jahr</b> mit dem Stichwort „iCloud …“.</p>
@@ -1147,27 +1160,16 @@ const routes = {
           Funktioniert nur, wenn in den iCloud-Einstellungen „Auf iCloud-Daten im Web zugreifen“ an und „Erweiterter Datenschutz“ aus ist.</p>
         </details>
       </div>
-      <div class="card"><h2>Ordner oder ZIP – Google Takeout, Amazon Fotos, Handy, SD-Karte …</h2>
-        <div class="form">
-          <label>Quelle</label><div class="row" style="flex-wrap:nowrap"><input type="text" id="fp" placeholder="Ordner oder .zip wählen" style="flex:1"><button id="fpb">Durchsuchen …</button></div>
-          <label>Herkunft</label><input type="text" id="fl" placeholder="z. B. Google Fotos, Amazon Fotos (optional)">
-          <label>Alben</label><label style="color:var(--text)"><input type="checkbox" id="fa"> Unterordner als Alben übernehmen (bei Google Takeout automatisch)</label>
-          <label>Quelle</label><label style="color:var(--text)"><input type="checkbox" id="fm"> neue Dateien <b>verschieben</b> statt kopieren
-            <span class="muted">(spart Platz; was schon im Archiv ist, bleibt in der Quelle liegen)</span></label>
-          <span></span><div class="row"><button id="fdry">Vorschau</button><button class="primary" id="fgo">Importieren</button></div>
-        </div>
-        <details class="help"><summary style="cursor:pointer">So bekommst du deine Fotos von Google und Amazon</summary>
-          <b>Google Fotos</b> (Google erlaubt seit 2025 keinen direkten Zugriff mehr):
-          <ol><li>takeout.google.com öffnen, „Auswahl aufheben“, nur <b>Google Fotos</b> ankreuzen.</li>
-          <li>„Exporthäufigkeit“: <b>alle 2 Monate für 1 Jahr</b> – dann kommt der Export automatisch per Mail.</li>
-          <li>Dateityp ZIP, Größe 50 GB. Die ZIP-Dateien herunterladen (müssen nicht entpackt werden).</li>
-          <li>Hier den Download-Ordner wählen und „Importieren“ – auch bei jedem weiteren Export werden nur neue Fotos übernommen.
-          Datum und Ort aus Googles Begleitdateien bleiben erhalten, Google-Alben werden zu Alben.</li></ol>
-          <b>Amazon Fotos</b> (keine offizielle Schnittstelle): auf amazon.de/photos Fotos markieren → Herunterladen, oder mit der
-          Amazon-Photos-App für Windows/Mac einen Ordner herunterladen lassen. Dann diesen Ordner hier importieren.
-        </details>
+      <div class="card" id="icl" data-fold="iclback"><h2>Nach iCloud zurück & geteilte Alben <small class="muted">über „iCloud für Windows“</small></h2>
+        <p class="help">FotoArchiv legt Fotos in den Ordner von iCloud für Windows; sobald sie hochgeladen sind, wird dort der Speicher
+        freigegeben (das Foto bleibt in iCloud, belegt am PC nichts). Was schon in iCloud ist, wird erkannt und nicht doppelt geschickt.
+        <b>Im iCloud-Ordner löscht FotoArchiv nie etwas</b> – Löschen dort würde auch in iCloud löschen. Alben, Personen und Stichwörter
+        übernimmt Apple so nicht. Hochladen: Fotos markieren › „…“ › „Nach iCloud“, oder bei einem Album/Ereignis oben „☁ iCloud“
+        einschalten – dann gehen auch künftige Fotos darin von selbst nach iCloud (private nie).</p>
+        <div id="icl-body" class="muted">…</div>
       </div>
-      <div class="card" id="hist" hidden><h2>Bisherige Importe</h2><div></div></div>`;
+      <div class="card" id="hist" hidden data-fold="hist"><h2>Bisherige Importe</h2><div></div></div>`;
+    foldCards(page);
     $("#fpb", page).onclick = async () => { const p = await browseFs($("#fp", page).value); if (p) $("#fp", page).value = p; };
     const folder = async dry => {
       const path = $("#fp", page).value.trim();
@@ -1377,6 +1379,7 @@ const routes = {
       const card = $("#catcard", page);
       if (!card) return;
       card.innerHTML = catalogHtml(s);
+      foldCards(page);
       bindCatalog();
       if (s.progress.running || s.recompute) setTimeout(refreshCatalog, 3000);
     };
@@ -1385,7 +1388,8 @@ const routes = {
       const pr = s.progress;
       const included = new Set(s.included);
       page.innerHTML = `<h1>Bibliothek</h1>
-      <div class="card${s.items ? "" : " setup"}"><h2>Fotoordner</h2>
+      <p class="intro">Wo die Fotos liegen, was eingelesen wird, Fernseher, Privat und Sprache. Klicke auf einen Punkt, um ihn aufzuklappen.</p>
+      <div class="card${s.items ? "" : " setup"}" data-fold="root"${s.items ? "" : " data-open"}><h2>Fotoordner</h2>
         ${s.items ? "" : `<p><b>Willkommen bei FotoArchiv!</b> Wähle zuerst den Ordner, in dem deine Fotos liegen – z. B. „Bilder“
           oder eine externe Festplatte. Alle Unterordner werden mit durchsucht, die Fotos selbst bleiben, wo sie sind.</p>`}
         <p><code>${esc(s.root)}</code>${s.root_ok ? "" : ` <b style="color:var(--bad)">nicht erreichbar – Platte angesteckt?</b>`}</p>
@@ -1393,7 +1397,8 @@ const routes = {
           im FotoArchiv-Ordner löschen (Personen, Alben usw. gehen dabei verloren).</p>`
           : `<button class="primary" id="pickroot">Fotoordner wählen …</button>`}
       </div>
-      <div class="card"><h2>Weitere Fotoordner <small class="muted">NAS, zweite Platte, Ordner auf dem Computer</small></h2>
+      <div class="card" id="catcard" data-fold="cat" data-open>${catalogHtml(s)}      </div>
+      <div class="card" data-fold="sources"><h2>Weitere Fotoordner <small class="muted">NAS, zweite Platte, Ordner auf dem Computer</small></h2>
         <p class="muted">Zusätzlich zum Fotoordner oben – die Fotos erscheinen überall gemeinsam (Zeitleiste, Alben, Personen, Suche),
         unter „Ordner“ als eigener Bereich 🖧. Ist eine Quelle gerade nicht erreichbar (NAS aus, Platte nicht angesteckt), wird sie beim
         Einlesen übersprungen; ihre Fotos bleiben im Katalog. Hinweis: Der Katalog selbst bleibt immer im FotoArchiv-Ordner, nie auf dem NAS.</p>
@@ -1404,15 +1409,14 @@ const routes = {
             <button data-srcdel="${esc(x.name)}" class="danger">Entfernen</button></div>`).join("") || '<p class="muted">Noch keine weiteren Fotoordner.</p>'}</div>
         <button class="primary" id="srcadd">+ Fotoordner hinzufügen …</button>
       </div>
-      <div class="card" id="catcard">${catalogHtml(s)}      </div>
-      <div class="card"><h2>Ordner in der Bibliothek</h2>
+      <div class="card" data-fold="folders"><h2>Ordner in der Bibliothek</h2>
         <p class="muted">Diese Ordner auf der Festplatte werden durchsucht. Nach Änderungen „Bibliothek aktualisieren“.</p>
         <div class="folderlist">${s.all_folders.map(f => `<label><input type="checkbox" value="${esc(f)}" ${included.has(f) ? "checked" : ""}> ${esc(f)}</label>`).join("")}</div>
         <p><label><input type="checkbox" id="hdup" ${s.config.hide_duplicates ? "checked" : ""}> Doppelte Fotos nur einmal zeigen (gleiche Aufnahmezeit und gleicher Bildinhalt)</label><br>
         <label><input type="checkbox" id="hraw" ${s.config.hide_raw_with_jpeg ? "checked" : ""}> RAW-Dateien ausblenden, wenn es ein JPEG/HEIC mit gleichem Namen gibt</label></p>
         <button id="savecfg">Speichern</button>
       </div>
-      <div class="card"><h2>Fernseher &amp; Samsung The Frame</h2>
+      <div class="card" data-fold="tv"><h2>Fernseher &amp; Samsung The Frame</h2>
         <p class="muted">Fotos, Diashows und Videos auf dem Fernseher zeigen und Fotos in den Kunstmodus des Frame schicken.
         Der Fernseher muss eingeschaltet und im selben Netz sein.</p>
         <div id="tvset" class="devlist muted">lädt …</div>
@@ -1423,14 +1427,19 @@ const routes = {
         Dort mit der Fernbedienung durch Ereignisse, Alben, Jahre, Personen und Favoriten gehen, mit ← → blättern, ▶ startet die Diashow.
         Private und ausgeblendete Fotos werden dort nie angezeigt. Funktioniert nur, solange FotoArchiv läuft.</p>
         <label><input type="checkbox" id="dmson"> FotoArchiv im Heimnetz für den Fernseher freigeben</label> <span id="dmsst" class="muted"></span></div>
-      <div class="card"><h2>Privat</h2>
+      <div class="card" data-fold="private"><h2>Privat</h2>
         <p class="muted">Fotos, Alben und Ereignisse lassen sich als privat markieren (Fotos markieren › „Mehr …“, oder auf der Album-/Ereignisseite).
         Private Fotos zeigen überall nur ein Schloss, bis das Passwort eingegeben wird. Nach 30 Minuten ohne Nutzung wird automatisch wieder gesperrt.
         Hinweis: Das schützt die Oberfläche – die Dateien selbst auf der Festplatte bleiben unverändert.</p>
         <div class="row">${s.private.password ? `<button id="pwchange">Passwort ändern</button>${s.private.unlocked ? `<button id="pwlock">Jetzt sperren</button>` : `<button id="pwunlock">Entsperren</button>`}`
           : `<button class="primary" id="pwset">Passwort festlegen</button>`}</div></div>
+      <div class="card" data-fold="lang"><h2>Sprache · Language</h2>
+        <select id="langsel" translate="no"><option value="de">Deutsch</option><option value="en">English</option></select></div>
       <div class="card"><h2>Beenden</h2><p class="muted">Vor dem Abziehen der Festplatte FotoArchiv beenden.</p><button id="quit" class="danger">FotoArchiv beenden</button></div>`;
       bindTvSettings(page);
+      foldCards(page);
+      $("#langsel", page).value = window.LANG || "de";
+      $("#langsel", page).onchange = e => window.setLang && window.setLang(e.target.value);
       $("#srcadd", page).onclick = async () => {
         const path = await browseFs("");
         if (!path) return;
@@ -3224,7 +3233,8 @@ async function route() {
   const h = location.hash.replace(/^#\/?/, "").split("?")[0];
   const [name, ...rest] = h.split("/").map(decodeURIComponent);
   const page = name || "start";
-  $$("#side > a").forEach(a => a.classList.toggle("active", a.dataset.nav === page ||
+  if (["einstellungen", "import", "sicherung"].includes(page)) $("#navset").classList.add("open");
+  $$("#side a[data-nav]").forEach(a => a.classList.toggle("active", a.dataset.nav === page ||
     (a.dataset.nav === "personen" && (page === "person" || page === "unbekannt")) ||
     (a.dataset.nav === "alben" && (page === "album" || page === "ereignis" || page === "ausgeblendet"))));
   document.body.classList.toggle("trashview", page === "papierkorb");
@@ -3239,6 +3249,54 @@ async function route() {
   }
 }
 window.addEventListener("hashchange", route);
+
+// Seitenleiste: Gruppe „Einstellungen“ auf-/zuklappen (gemerkt)
+try { if (localStorage.getItem("fa_navset") === "1") $("#navset").classList.add("open"); } catch { /* egal */ }
+$("#navset .navhead").onclick = () => {
+  const open = $("#navset").classList.toggle("open");
+  try { localStorage.setItem("fa_navset", open ? "1" : "0"); } catch { /* egal */ }
+};
+
+// Einstellungsseiten: Karten mit data-fold auf-/zuklappbar; zugeklappt nur Titel + Kurzhilfe (Zustand gemerkt)
+const FOLD_HELP = {
+  inbox: "Dateien einfach in einen Ordner legen – FotoArchiv holt sie von selbst ab.",
+  zip: "Einmalig einen Ordner, eine SD-Karte oder ZIP-Dateien (z. B. Google Takeout) übernehmen.",
+  icloud: "Fotos aus einem oder mehreren iCloud-Konten herunterladen.",
+  iclback: "Fotos aus dem Archiv wieder nach iCloud hochladen und geteilte Alben holen (Windows).",
+  hist: "Was bisher importiert wurde.",
+  root: "Wo deine Fotos liegen.",
+  cat: "Neue, geänderte und gelöschte Dateien einlesen.",
+  sources: "NAS, zweite Platte oder weitere Ordner einbinden.",
+  folders: "Welche Ordner durchsucht werden; Doppelte und RAW ausblenden.",
+  tv: "Fotos und Diashows auf dem Fernseher, Samsung The Frame.",
+  private: "Passwort für private Fotos, Alben und Ereignisse.",
+  lang: "Sprache der Oberfläche – Deutsch oder Englisch.",
+  s3: "Alles auf S3 sichern – läuft im Hintergrund, nur Neues wird hochgeladen.",
+  targets: "S3-Speicher einrichten (Amazon S3, MinIO, StorageGRID …).",
+  restore: "Ordner oder den Katalog aus der Sicherung zurückholen.",
+  web: "Alben als Webseite mit Link teilen.",
+  amazon: "Fotos mit der Amazon-Photos-App sichern.",
+};
+function foldState() { try { return JSON.parse(localStorage.getItem("fa_fold") || "{}"); } catch { return {}; } }
+function foldCards(page) {
+  const st = foldState();
+  $$(".card[data-fold]", page).forEach(c => {
+    const k = c.dataset.fold, h = $(":scope > h2", c);
+    if (!h) return;
+    if (!$(".fold-i", h)) h.insertAdjacentHTML("afterbegin", '<span class="fold-i">▸</span>');
+    if (FOLD_HELP[k] && !$(":scope > .cardhelp", c)) h.insertAdjacentHTML("afterend", `<p class="cardhelp">${FOLD_HELP[k]}</p>`);
+    c.classList.toggle("folded", !(k in st ? st[k] : c.hasAttribute("data-open")));
+  });
+  if (page.dataset.foldBound) return;
+  page.dataset.foldBound = "1";
+  page.addEventListener("click", e => {
+    const h = e.target.closest(".card[data-fold] > h2");
+    if (!h || e.target.closest("button, a, input, select, label")) return;
+    const c = h.parentElement, s = foldState();
+    s[c.dataset.fold] = !c.classList.toggle("folded");
+    try { localStorage.setItem("fa_fold", JSON.stringify(s)); } catch { /* egal */ }
+  });
+}
 
 // Sofort die Übersicht zeigen; Personen, Jahre und Status laden nebenher (die USB-Platte kann träge sein)
 const personsReady = loadPersons().catch(() => []);
