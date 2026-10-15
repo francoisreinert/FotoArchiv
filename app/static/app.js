@@ -655,7 +655,7 @@ const routes = {
       <p class="muted" style="max-width:900px">Gleiche Fotos/Videos nebeneinander. Grün = wird behalten (Vorschlag: höchste Qualität, also größte Datei bzw.
         Originalformat; bei identischen Dateien der bevorzugte Ordner). Klick auf eine andere Datei wählt sie zum Behalten, Klick aufs Bild zeigt es groß.
         „Übernehmen“ legt die roten in den Papierkorb – Alben, Personen, Favoriten und Stichwörter gehen auf die behaltene Datei über.</p>
-      <div class="row dupbar">
+      <div class="stickybar"><div class="row dupbar">
         <label>Art <select id="dkind">${opt("", "Alle", kind)}${opt("photo", "Fotos", kind)}${opt("video", "Videos", kind)}</select></label>
         <label>Ordner <select id="dfold">${opt("", "Alle Ordner", folder)}${d.folders.map(([f, n]) => opt(f, `${f} (${num(n)})`, folder)).join("")}</select></label>
         <label>Bei gleicher Qualität behalten in <select id="dpref">${opt("", "egal", prefer)}${d.folders.map(([f]) => opt(f, f, prefer)).join("")}</select></label>
@@ -663,8 +663,8 @@ const routes = {
         ${d.groups.length ? `<button id="dpage" class="primary">Alle ${d.groups.length} Vorschläge dieser Seite übernehmen</button>
         <button id="dall" class="danger">Alle ${num(d.total)} Gruppen übernehmen …</button>` : ""}
       </div>
+      ${pager()}</div>
       <div class="card wide" id="djob" hidden></div>
-      ${pager()}
       <div id="dgroups">${d.groups.map(card).join("") || `<div class="empty">Keine Duplikate${folder || kind ? " mit diesem Filter" : ""}. 🎉</div>`}</div>
       ${pager()}`;
     const paint = el => {
