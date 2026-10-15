@@ -750,6 +750,20 @@ def remove_account(acc_id):
     shutil.rmtree(os.path.join(ICLOUD_DIR, acc_id), ignore_errors=True)
 
 
+def _mark_try(acc_id, started, error, since, ok):
+    """Letzten Versuch am Konto vermerken (die Import-Seite zeigt ihn sofort an)."""
+    accs = _accounts()
+    for a in accs:
+        if a["id"] == acc_id:
+            a["last_try"] = started
+            a["last_error"] = error
+            if ok:
+                a["last_run"] = started
+                if since:
+                    a["since"] = since
+    _save_accounts(accs)
+
+
 def run_icloud(acc_id, since=None):
     """Neue Fotos aus iCloud holen (eigene und geteilte Bibliothek)."""
     from pyicloud_ipd.item_type import AssetItemType
@@ -806,18 +820,19 @@ def run_icloud(acc_id, since=None):
                     con.commit()
                     last_commit = time.time()
             con.commit()
-        accs = _accounts()
-        for a in accs:
-            if a["id"] == acc_id:
-                a["last_run"] = started
-                if since:
-                    a["since"] = since
-        _save_accounts(accs)
+        _mark_try(acc_id, started, None, since, ok=not JOB.stop)
         JOB.message = "Fertig: %d neu geholt, %d schon vorhanden" % (JOB.new, JOB.existing)
         JOB.note(JOB.message)
     except Exception as ex:
-        JOB.message = "Fehler: %s" % ex
+        msg = str(ex)
+        if "finished indexing" in msg:
+            msg = ("Apple stellt die Foto-Mediathek für den Zugriff übers Netz gerade erst bereit („indexing“). Das passiert "
+                   "z. B. nach dem Einschalten von „Auf iCloud-Daten im Web zugreifen“ oder von iCloud für Windows und dauert "
+                   "einige Stunden, selten 1–2 Tage. Es hilft, icloud.com/photos einmal im Browser zu öffnen. "
+                   "Danach einfach wieder „Neue holen“ – nichts geht verloren.")
+        JOB.message = "Fehler: %s" % msg
         JOB.errors += 1
+        _mark_try(acc_id, started, msg, None, ok=False)
     finally:
         con.close()
         _set_resume(None)

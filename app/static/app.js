@@ -1305,7 +1305,9 @@ const routes = {
       if (accKey !== refresh.accKey) {
       refresh.accKey = accKey;
       $("#accs", page).innerHTML = s.accounts.map(a => `<div class="acc" data-id="${esc(a.id)}"><b>${esc(a.label)}</b><span class="muted">${esc(a.apple_id)}</span>
-        <span class="muted">zuletzt: ${a.last_run ? esc(a.last_run.replace("T", " ").slice(0, 16)) : "noch nie"}</span><span style="flex:1"></span>
+        <span class="muted">zuletzt geholt: ${a.last_run ? esc(a.last_run.replace("T", " ").slice(0, 16)) : "noch nie"}</span>
+        ${a.last_error && a.last_try ? `<span class="srcbad" title="${esc(a.last_error)}">Versuch ${esc(a.last_try.replace("T", " ").slice(0, 16))} fehlgeschlagen</span>` : ""}
+        ${j.running && j.title === "iCloud: " + a.label ? `<span class="srcok">läuft …</span>` : ""}<span style="flex:1"></span>
         ${a.last_run ? "" : `<label class="muted">ab <input type="date" class="since" value="${esc(a.since || "")}"></label>`}
         <button class="primary run" ${j.running ? "disabled" : ""}>Neue holen</button><button class="rm danger">Entfernen</button></div>`).join("")
         || `<p class="muted">Noch kein iCloud-Konto verbunden.</p>`;
