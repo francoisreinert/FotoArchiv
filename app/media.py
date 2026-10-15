@@ -379,7 +379,17 @@ def _open_image(path, kind, max_side=None):
                 exif = tif.getexif()
         except Exception:
             exif = None
-        with rawpy.imread(path) as raw:
+        try:
+            rawf = rawpy.imread(path)
+        except Exception:
+            # z. B. Mylio-Vorschau-DNG mit JPEG-XR-Kacheln, die LibRaw nicht kennt
+            im, size, orient = dng_jpegxr(path, max_side)
+            if orient in (5, 6, 7, 8):
+                size = (size[1], size[0])
+            for op in _ORIENT_OPS.get(orient, []):
+                im = im.transpose(op)
+            return im, exif, None, size, orient
+        with rawf as raw:
             try:
                 th = raw.extract_thumb()
                 if th.format == rawpy.ThumbFormat.JPEG:
@@ -401,7 +411,16 @@ def _open_image(path, kind, max_side=None):
             im = im.convert("RGB")
         return im, exif, None, size, orient
 
-    im = Image.open(path)
+    try:
+        im = Image.open(path)
+        if im.format == "PSD":
+            im.load()
+    except Exception:
+        if not path.lower().endswith((".psd", ".psb")):
+            raise
+        # 16-Bit-PSD, Smartobjekte … : gespeichertes Gesamtbild selbst lesen
+        im, size = psd_composite(path, max_side)
+        return im.convert("RGB"), None, None, size, 1
     exif = im.getexif()
     # HEIC: libheif dreht schon selbst, die Ursprungs-Ausrichtung steht in info
     region_orient = im.info.get("original_orientation") or exif.get(0x0112) or 1
@@ -410,7 +429,7 @@ def _open_image(path, kind, max_side=None):
     orient = exif.get(0x0112) or 1
     if im.format == "JPEG" and max_side:
         im.draft("RGB", (max_side, max_side))
-    if getattr(im, "n_frames", 1) > 1 and im.format != "PSD":  # PSD: ohne seek = Gesamtbild statt Ebene
+    if im.format != "PSD" and getattr(im, "n_frames", 1) > 1:  # PSD: ohne seek = Gesamtbild statt Ebene
         im.seek(0)
     im.load()
     if im.format == "JPEG" and "xmp" in im.info:
@@ -874,3 +893,135 @@ def process(task):
     except Exception as e:  # beschädigte Dateien sollen den Lauf nicht stoppen
         res["error"] = "%s: %s" % (type(e).__name__, str(e)[:200])
     return res
+
+
+# ------------------------------------------------- Ausweichwege für Sonderfälle ----
+
+def psd_composite(path, max_side=None):
+    """PSD/PSB, die Pillow nicht öffnet (16 Bit, Smartobjekte …): das gespeicherte Gesamtbild selbst lesen
+    (Image-Data-Abschnitt, roh oder RLE), 16 Bit → 8 Bit. Klappt das nicht, das eingebettete Vorschaubild
+    (Ressource 1036, ~160 px). Gibt (Bild, (Breite, Höhe)) zurück."""
+    import struct
+
+    import numpy as np
+
+    with open(path, "rb") as f:
+        hd = f.read(26)
+        if hd[:4] != b"8BPS":
+            raise ValueError("keine PSD-Datei")
+        ver = struct.unpack(">H", hd[4:6])[0]
+        ch, h, w, depth, mode = struct.unpack(">HIIHH", hd[12:26])
+        f.seek(struct.unpack(">I", f.read(4))[0], 1)  # Farbmodus-Daten
+        res = f.read(struct.unpack(">I", f.read(4))[0])
+        lm = struct.unpack(">Q" if ver == 2 else ">I", f.read(8 if ver == 2 else 4))[0]
+        f.seek(lm, 1)  # Ebenen und Masken
+        try:
+            if depth not in (8, 16) or mode not in (1, 3):  # Graustufen, RGB
+                raise ValueError("Farbtiefe %d / Modus %d" % (depth, mode))
+            comp = struct.unpack(">H", f.read(2))[0]
+            n = 3 if mode == 3 and ch >= 3 else 1
+            bpr = w * depth // 8
+            if comp == 1:
+                cw = 4 if ver == 2 else 2
+                counts = np.frombuffer(f.read(cw * ch * h), dtype=">u4" if cw == 4 else ">u2").astype(np.int64)
+                planes = []
+                for c in range(n):
+                    data = f.read(int(counts[c * h:(c + 1) * h].sum()))
+                    plane = Image.frombytes("L", (bpr, h), data, "packbits", "L")
+                    planes.append(np.asarray(plane))
+            elif comp == 0:
+                planes = [np.frombuffer(f.read(bpr * h), dtype=np.uint8).reshape(h, bpr) for _ in range(n)]
+            else:
+                raise ValueError("Kompression %d" % comp)
+            if depth == 16:
+                planes = [p[:, ::2] for p in planes]  # Big-Endian: oberes Byte zuerst
+            im = Image.fromarray(np.dstack(planes) if n == 3 else planes[0], "RGB" if n == 3 else "L")
+            return _fast_reduce(im, max_side), (w, h)
+        except Exception:
+            i = res.find(b"8BIM\x04\x0c")
+            if i < 0:
+                raise
+            nl = res[i + 6]
+            j = i + 6 + ((nl + 2) & ~1) + 4  # Name (Pascal-String, gerade Länge) + Größe
+            im = Image.open(io.BytesIO(res[j + 28:]))
+            im.load()
+            return im.convert("RGB"), (w, h)
+
+
+def dng_jpegxr(path, max_side=None):
+    """Verlustbehaftete DNG mit JPEG-XR-Kacheln (z. B. Mylio-Vorschau-DNGs): Kacheln über Windows (WIC) entschlüsseln
+    und zusammensetzen. Nur Windows. Gibt (Bild, (Breite, Höhe), EXIF-Ausrichtung) zurück."""
+    import shutil
+    import struct
+    import subprocess
+    import tempfile
+
+    if os.name != "nt":
+        raise ValueError("JPEG-XR-DNG nur unter Windows lesbar")
+    with open(path, "rb") as f:
+        d = f.read()
+    e = "<" if d[:2] == b"II" else ">"
+    off = struct.unpack(e + "I", d[4:8])[0]
+    tags = {}
+    for k in range(struct.unpack(e + "H", d[off:off + 2])[0]):
+        tag, typ, cnt, val = struct.unpack(e + "HHI4s", d[off + 2 + 12 * k:off + 14 + 12 * k])
+        tags[tag] = (typ, cnt, val)
+
+    def arr(tag):
+        typ, cnt, val = tags[tag]
+        if typ in (5, 10):  # (S)RATIONAL
+            o = struct.unpack(e + "I", val)[0]
+            v = struct.unpack(e + ("%dI" if typ == 5 else "%di") % (2 * cnt), d[o:o + 8 * cnt])
+            return tuple(v[2 * i] / (v[2 * i + 1] or 1) for i in range(cnt))
+        size = (2 if typ == 3 else 4) * cnt
+        raw = val[:size] if size <= 4 else d[struct.unpack(e + "I", val)[0]:][:size]
+        return struct.unpack(e + ("%dH" if typ == 3 else "%dI") % cnt, raw)
+
+    def wrap(cs, tw, tl):
+        """Nackter WMPHOTO-Datenstrom → minimaler JPEG-XR-Container, den Windows (WIC) liest (24 bpp RGB)."""
+        pf = bytes.fromhex("24c3dd6f034efe4bb1853d77768dc90d")  # GUID_WICPixelFormat24bppRGB
+        ents = [struct.pack("<HHII", 0xBC01, 1, 16, 74), struct.pack("<HHII", 0xBC80, 4, 1, tw),
+                struct.pack("<HHII", 0xBC81, 4, 1, tl), struct.pack("<HHII", 0xBCC0, 4, 1, 90),
+                struct.pack("<HHII", 0xBCC1, 4, 1, len(cs))]
+        return b"II\xbc\x01" + struct.pack("<IH", 8, 5) + b"".join(ents) + b"\0\0\0\0" + pf + cs
+    w, h, tw, tl = arr(256)[0], arr(257)[0], arr(322)[0], arr(323)[0]
+    offs, cnts = arr(324), arr(325)
+    if d[offs[0]:offs[0] + 7] != b"WMPHOTO":
+        raise ValueError("keine JPEG-XR-Kacheln")
+    tmp = tempfile.mkdtemp(prefix="fa_jxr_")
+    try:
+        for i, (o, c) in enumerate(zip(offs, cnts)):
+            with open(os.path.join(tmp, "%04d.jxr" % i), "wb") as t:
+                t.write(wrap(d[o:o + c], tw, tl))
+        ps = ("Add-Type -AssemblyName PresentationCore; Get-ChildItem -LiteralPath '%s' -Filter *.jxr | ForEach-Object { "
+              "$s=[IO.File]::OpenRead($_.FullName); $dec=[Windows.Media.Imaging.WmpBitmapDecoder]::new($s,'PreservePixelFormat','OnLoad'); "
+              "$enc=[Windows.Media.Imaging.PngBitmapEncoder]::new(); $enc.Frames.Add($dec.Frames[0]); "
+              "$o=[IO.File]::Create($_.FullName + '.png'); $enc.Save($o); $o.Close(); $s.Close() }" % tmp)
+        subprocess.run(["powershell.exe", "-NoProfile", "-Command", ps], capture_output=True, timeout=120,
+                       creationflags=0x08000000)
+        im = Image.new("RGB", (w, h))
+        across = (w + tw - 1) // tw
+        for i in range(len(offs)):
+            t = Image.open(os.path.join(tmp, "%04d.jxr.png" % i))
+            t.load()
+            im.paste(t.convert("RGB"), ((i % across) * tw, (i // across) * tl))
+        # Rohwerte (linear, Kamerafarben) → Vorschau: Schwarz/Weißpunkt, Weißabgleich aus AsShotNeutral, Gamma
+        import numpy as np
+
+        a = np.asarray(im, dtype=np.float32)
+        black = arr(50714)[0] if 50714 in tags else 0
+        white = arr(50717)[0] if 50717 in tags else 255
+        a = np.clip((a - black) / max(1, white - black), 0, 1)
+        # Weißabgleich: graue Welt über die mittleren Helligkeiten (AsShotNeutral passt hier nicht, die Werte sind
+        # schon teilweise abgeglichen und würden lila)
+        lum = a.mean(axis=2)
+        lo, hi = np.percentile(lum, (20, 95))
+        m = a[(lum > lo) & (lum < hi)].mean(axis=0) if ((lum > lo) & (lum < hi)).any() else a.reshape(-1, 3).mean(axis=0)
+        a = a * (m.mean() / np.maximum(m, 1e-3))
+        a = a / max(1e-3, float(np.percentile(a, 99.5)))  # leicht aufhellen wie eine Kamera-Vorschau
+        a = np.clip(a, 0, 1) ** (1 / 2.2)
+        im = Image.fromarray((a * 255 + 0.5).astype(np.uint8), "RGB")
+        orient = arr(274)[0] if 274 in tags else 1
+        return _fast_reduce(im, max_side), (w, h), orient
+    finally:
+        shutil.rmtree(tmp, ignore_errors=True)
