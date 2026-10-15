@@ -187,8 +187,30 @@ def keep_all(con, ids):
     con.commit()
 
 
-def run_all(con_factory, prefer, kind, folder, skip_private, after):
-    """Alle Vorschläge übernehmen (im Hintergrund, mit Fortschritt in JOB)."""
+SAFE_DIFF = 0.01  # „sichere Kopie“: Vorschaubild-Struktur praktisch gleich (indexer.structure_diff)
+
+
+def is_safe(con, best, rest):
+    """Jede Kopie ist byte-gleich groß wie die behaltene Datei oder im Bildvergleich praktisch identisch –
+    keine Bearbeitung, kein anderer Ausschnitt. Ohne Vorschaubild: nicht sicher."""
+    import indexer
+
+    for m in rest:
+        if (m["size"] or 0) == (best["size"] or 0):
+            continue
+        a, b = min(best["id"], m["id"]), max(best["id"], m["id"])
+        row = con.execute("SELECT score FROM dup_sim WHERE a=? AND b=?", (a, b)).fetchone()
+        s = row[0] if row else indexer.structure_diff(a, b)
+        if not row:
+            con.execute("INSERT OR REPLACE INTO dup_sim(a, b, score) VALUES(?,?,?)", (a, b, s))
+        if s is None or s > SAFE_DIFF:
+            return False
+    return True
+
+
+def run_all(con_factory, prefer, kind, folder, skip_private, after, safe_only=False):
+    """Alle Vorschläge übernehmen (im Hintergrund, mit Fortschritt in JOB).
+    safe_only: nur Gruppen, deren Kopien byte-gleich groß oder im Bildvergleich identisch sind (is_safe)."""
     def work():
         con = con_factory()
         try:
@@ -201,6 +223,10 @@ def run_all(con_factory, prefer, kind, folder, skip_private, after):
                 members = list(details(con, g[1]).values())
                 if len(members) > 1:
                     best, rest = suggest(members, prefer)
+                    if safe_only and not is_safe(con, best, rest):
+                        JOB["skipped"] = JOB.get("skipped", 0) + 1
+                        JOB["done"] += 1
+                        continue
                     n, errors = resolve(con, best["id"], [m["id"] for m in rest])
                     JOB["count"] += n
                     JOB["errors"] += errors[:3]
@@ -214,6 +240,6 @@ def run_all(con_factory, prefer, kind, folder, skip_private, after):
 
     if JOB["running"]:
         return False
-    JOB.update(running=True, stop=False, done=0, total=0, count=0, errors=[], finished=None)
+    JOB.update(running=True, stop=False, done=0, total=0, count=0, errors=[], finished=None, skipped=0, safe=safe_only)
     threading.Thread(target=work, daemon=True).start()
     return True

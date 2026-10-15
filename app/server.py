@@ -1698,7 +1698,8 @@ def r_dups_all(h, p):
         indexer.rebuild_fts(con)
         con.close()
         _tree_cache.clear()
-    ok = dups.run_all(connect, b.get("prefer") or None, b.get("kind") or "", b.get("folder") or "", locked(h), after)
+    ok = dups.run_all(connect, b.get("prefer") or None, b.get("kind") or "", b.get("folder") or "", locked(h), after,
+                      safe_only=bool(b.get("safe")))
     h.send_json({"ok": ok})
 
 

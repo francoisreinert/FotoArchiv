@@ -661,6 +661,7 @@ const routes = {
         <label>Bei gleicher Qualität behalten in <select id="dpref">${opt("", "egal", prefer)}${d.folders.map(([f]) => opt(f, f, prefer)).join("")}</select></label>
         <span style="flex:1"></span>
         ${d.groups.length ? `<button id="dpage" class="primary">Alle ${d.groups.length} Vorschläge dieser Seite übernehmen</button>
+        <button id="dsafe" title="Nur Gruppen, deren Kopien byte-gleich oder im Bildvergleich identisch sind – Bearbeitungen und Grenzfälle bleiben zum Prüfen stehen">Nur sichere Kopien übernehmen …</button>
         <button id="dall" class="danger">Alle ${num(d.total)} Gruppen übernehmen …</button>` : ""}
       </div>
       ${pager()}</div>
@@ -727,6 +728,15 @@ const routes = {
       if (j.running && location.hash.startsWith("#/duplikate")) setTimeout(pollJob, 2000);
     };
     pollJob();
+    const ds = $("#dsafe", page);
+    if (ds) ds.onclick = async () => {
+      if (!await confirmBox(`Nur die sicheren Gruppen${folder ? ` mit Ordner „${folder}“` : ""}${kind ? (kind === "video" ? " (nur Videos)" : " (nur Fotos)") : ""} übernehmen: ` +
+        "Kopien, die byte-gleich groß oder im Bildvergleich identisch sind. Bearbeitete Fassungen und Grenzfälle bleiben stehen. " +
+        `Die Kopien wandern in den Papierkorb (bevorzugter Ordner: ${prefer || "egal"}). Läuft im Hintergrund.`)) return;
+      const r = await api("/api/dups/all", { prefer, kind, folder, safe: true });
+      if (!r.ok) return toast("Läuft bereits");
+      pollJob();
+    };
     const da = $("#dall", page);
     if (da) da.onclick = async () => {
       if (!await confirmBox(`Für alle ${num(d.total)} Gruppen${folder ? ` mit Ordner „${folder}“` : ""}${kind ? (kind === "video" ? " (nur Videos)" : " (nur Fotos)") : ""} den Vorschlag übernehmen? ` +
