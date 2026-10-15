@@ -541,8 +541,15 @@ SIM_SAME_NAME_OTHER_NUMBER = 0.01  # IMG_2816 / IMG_2817: nur fast identisch = K
 SIM_OTHER_NAME = 0.03             # ganz andere Namen: gleiche Bildstruktur (Farbfilter/Helligkeit egal)
 
 
+_DATE_NAME = re.compile(r"^\d{4}[-_.]?\d{2}[-_.]?\d{2}")
+
+
 def _shot(name):
-    """(Präfix, Bildnummer) aus dem Dateinamen, z. B. IMG_2816-1.HEIC → ('img_', '2816')."""
+    """(Präfix, Bildnummer) aus dem Dateinamen, z. B. IMG_2816-1.HEIC → ('img_', '2816').
+    Namen, die mit einem Datum beginnen (2008_10_12(45).JPG, 2019-10-21_16-16-57…), tragen keine sichere Bildnummer –
+    dort entscheidet allein der Bildvergleich (None)."""
+    if _DATE_NAME.match(name or ""):
+        return None
     m = _SHOT.match(name or "")
     return (m.group(1).lower(), m.group(2)) if m else None
 
