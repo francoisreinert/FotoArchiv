@@ -750,7 +750,7 @@ def remove_account(acc_id):
     shutil.rmtree(os.path.join(ICLOUD_DIR, acc_id), ignore_errors=True)
 
 
-def _mark_try(acc_id, started, error, since, ok):
+def _mark_try(acc_id, started, error, since, ok, full=False):
     """Letzten Versuch am Konto vermerken (die Import-Seite zeigt ihn sofort an)."""
     accs = _accounts()
     for a in accs:
@@ -759,13 +759,23 @@ def _mark_try(acc_id, started, error, since, ok):
             a["last_error"] = error
             if ok:
                 a["last_run"] = started
+                if full:
+                    a["last_full"] = started
                 if since:
                     a["since"] = since
     _save_accounts(accs)
 
 
-def run_icloud(acc_id, since=None):
-    """Neue Fotos aus iCloud holen (eigene und geteilte Bibliothek)."""
+DELTA_MARGIN_DAYS = 30   # Delta: Aufnahmen bis so lange vor dem letzten Abruf immer ansehen
+DELTA_STOP = 200         # … danach aufhören, wenn so viele bekannte ältere Aufnahmen am Stück kamen
+FULL_EVERY_DAYS = 30     # voller Abgleich spätestens alle 30 Tage (findet auch spät hinzugefügte alte Fotos)
+
+
+def run_icloud(acc_id, since=None, full=False):
+    """Neue Fotos aus iCloud holen (eigene und geteilte Bibliothek).
+    Apple liefert neueste Aufnahmen zuerst. Delta (Standard nach dem ersten Lauf): hört auf, sobald DELTA_STOP bereits
+    bekannte Aufnahmen am Stück älter als (letzter Abruf − DELTA_MARGIN_DAYS) sind. full=True oder >30 Tage seit dem
+    letzten vollen Abgleich: alles durchsehen."""
     from pyicloud_ipd.item_type import AssetItemType
     from pyicloud_ipd.version_size import AssetVersionSize
 
@@ -774,7 +784,16 @@ def run_icloud(acc_id, since=None):
         return
     JOB.reset("iCloud: " + acc["label"])
     JOB.running = True
-    _set_resume({"type": "icloud", "id": acc_id, "since": since})
+    now = datetime.datetime.now()
+    last_full = acc.get("last_full") or (None if not acc.get("last_run") else acc.get("last_run"))
+    if not full and (not last_full or since or
+                     now - datetime.datetime.fromisoformat(last_full) > datetime.timedelta(days=FULL_EVERY_DAYS)):
+        full = True
+    cutoff = None
+    if not full:
+        cutoff = datetime.datetime.fromisoformat(acc["last_run"]) - datetime.timedelta(days=DELTA_MARGIN_DAYS)
+    JOB.title = "iCloud: %s%s" % (acc["label"], " – voller Abgleich" if full else "")
+    _set_resume({"type": "icloud", "id": acc_id, "since": since, "full": full})
     con = connect()
     started = datetime.datetime.now().isoformat(timespec="seconds")
     try:
@@ -784,7 +803,17 @@ def run_icloud(acc_id, since=None):
             JOB.message = "Anmeldung abgelaufen – bitte bei „%s“ neu anmelden." % acc["label"]
             JOB.errors += 1
             return
-        libs = api.photos.private_libraries or {"PrimarySync": api.photos}
+        # Apple meldet zeitweise „has not finished indexing yet“, obwohl es kurz danach geht – ein paar Mal nachfassen
+        for attempt in range(6):
+            try:
+                photos = api.photos
+                break
+            except Exception as ex:
+                if "finished indexing" not in str(ex) or attempt == 5 or JOB.stop:
+                    raise
+                JOB.phase = "Apple bereitet die Mediathek vor – neuer Versuch in 20 s (%d/5)" % (attempt + 1)
+                time.sleep(20)
+        libs = photos.private_libraries or {"PrimarySync": photos}
         source = "icloud:" + acc_id
         tag = "iCloud " + acc["label"]
         ledger = Ledger(con, source)
@@ -795,13 +824,15 @@ def run_icloud(acc_id, since=None):
                 break
             shared = zone.startswith("SharedSync")
             album = plib.all
-            JOB.phase = "Abgleich " + ("geteilte Bibliothek" if shared else "eigene Bibliothek")
+            JOB.phase = ("Abgleich " if full else "Neues suchen: ") + ("geteilte Bibliothek" if shared else "eigene Bibliothek") \
+                + (" – geladen wird nur Neues" if full else "")
             try:
                 JOB.total += len(album)
             except Exception:
                 pass
             JOB.note("%s: %s Einträge" % ("Geteilte Bibliothek" if shared else "Eigene Bibliothek", JOB.total))
             last_commit = time.time()
+            old_run = 0
             for asset in album:
                 if JOB.stop:
                     break
@@ -809,7 +840,17 @@ def run_icloud(acc_id, since=None):
                 key = asset.id
                 if ledger.has(key):
                     JOB.existing += 1
+                    if cutoff:
+                        try:
+                            old = asset.created.replace(tzinfo=None) < cutoff
+                        except Exception:
+                            old = False
+                        old_run = old_run + 1 if old else 0
+                        if old_run >= DELTA_STOP:
+                            JOB.note("Ab hier nur noch Bekanntes (Aufnahmen vor %s) – Rest übersprungen" % cutoff.strftime("%d.%m.%Y"))
+                            break
                     continue
+                old_run = 0
                 try:
                     _icloud_asset(api, asset, ledger, lib, tag + (" (geteilt)" if shared else ""), since_dt,
                                   AssetItemType, AssetVersionSize)
@@ -820,7 +861,7 @@ def run_icloud(acc_id, since=None):
                     con.commit()
                     last_commit = time.time()
             con.commit()
-        _mark_try(acc_id, started, None, since, ok=not JOB.stop)
+        _mark_try(acc_id, started, None, since, ok=not JOB.stop, full=full)
         JOB.message = "Fertig: %d neu geholt, %d schon vorhanden" % (JOB.new, JOB.existing)
         JOB.note(JOB.message)
     except Exception as ex:
@@ -923,7 +964,7 @@ def resume_pending():
     except (OSError, ValueError):
         return None
     if info.get("type") == "icloud" and any(a["id"] == info.get("id") for a in _accounts()):
-        start(run_icloud, info["id"], info.get("since"))
+        start(run_icloud, info["id"], info.get("since"), bool(info.get("full")))
         return "iCloud"
     if info.get("type") == "folder" and os.path.exists(info.get("path") or ""):
         start(import_folder, info["path"], info.get("label"), info.get("albums"), False, bool(info.get("move")))

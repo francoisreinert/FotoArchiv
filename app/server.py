@@ -1953,7 +1953,7 @@ def r_icloud_run(h, p):
     import importer
 
     b = h.body()
-    ok = importer.start(importer.run_icloud, b.get("id"), b.get("since") or None)
+    ok = importer.start(importer.run_icloud, b.get("id"), b.get("since") or None, bool(b.get("full")))
     h.send_json({"ok": ok} if ok else {"error": "Es läuft schon ein Import"})
 
 
@@ -3114,6 +3114,14 @@ class ExclusiveServer(ThreadingHTTPServer):
         if hasattr(socket, "SO_EXCLUSIVEADDRUSE"):
             self.socket.setsockopt(socket.SOL_SOCKET, socket.SO_EXCLUSIVEADDRUSE, 1)
         super().server_bind()
+
+    def handle_error(self, request, client_address):
+        # Browser schließt Verbindungen (Tab zu, Video übersprungen, Neuladen) – kein Fehler, nur Lärm im Fenster
+        import sys
+
+        if isinstance(sys.exc_info()[1], (ConnectionResetError, ConnectionAbortedError, BrokenPipeError, TimeoutError)):
+            return
+        super().handle_error(request, client_address)
 
 
 def already_running(port):

@@ -1306,17 +1306,21 @@ const routes = {
       refresh.accKey = accKey;
       $("#accs", page).innerHTML = s.accounts.map(a => `<div class="acc" data-id="${esc(a.id)}"><b>${esc(a.label)}</b><span class="muted">${esc(a.apple_id)}</span>
         <span class="muted">zuletzt geholt: ${a.last_run ? esc(a.last_run.replace("T", " ").slice(0, 16)) : "noch nie"}</span>
-        ${a.last_error && a.last_try ? `<span class="srcbad" title="${esc(a.last_error)}">Versuch ${esc(a.last_try.replace("T", " ").slice(0, 16))} fehlgeschlagen</span>` : ""}
-        ${j.running && j.title === "iCloud: " + a.label ? `<span class="srcok">läuft …</span>` : ""}<span style="flex:1"></span>
+        ${j.running && j.title.startsWith("iCloud: " + a.label) ? `<span class="srcok">läuft …</span>`
+          : a.last_error && a.last_try ? `<span class="srcbad" title="${esc(a.last_error)}">Versuch ${esc(a.last_try.replace("T", " ").slice(0, 16))} fehlgeschlagen</span>` : ""}<span style="flex:1"></span>
         ${a.last_run ? "" : `<label class="muted">ab <input type="date" class="since" value="${esc(a.since || "")}"></label>`}
-        <button class="primary run" ${j.running ? "disabled" : ""}>Neue holen</button><button class="rm danger">Entfernen</button></div>`).join("")
+        <button class="primary run" ${j.running ? "disabled" : ""} title="Sieht nur nach, was seit dem letzten Mal dazugekommen ist">Neue holen</button>
+        <button class="full" ${j.running ? "disabled" : ""} title="Ganze iCloud-Bibliothek durchsehen – findet auch alte Fotos, die erst später in iCloud kamen (läuft automatisch alle 30 Tage${a.last_full ? ", zuletzt " + esc(a.last_full.slice(0, 10)) : ""})">Voller Abgleich</button>
+        <button class="rm danger">Entfernen</button></div>`).join("")
         || `<p class="muted">Noch kein iCloud-Konto verbunden.</p>`;
       $$(".acc", page).forEach(el => {
-        $(".run", el).onclick = async () => {
+        const go = full => async () => {
           const since = $(".since", el) ? $(".since", el).value : "";
-          const r = await api("/api/icloud/run", { id: el.dataset.id, since });
+          const r = await api("/api/icloud/run", { id: el.dataset.id, since, full });
           if (r.error) toast(r.error); else refresh();
         };
+        $(".run", el).onclick = go(false);
+        $(".full", el).onclick = go(true);
         $(".rm", el).onclick = async () => {
           if (!await confirmBox("Konto entfernen? Bereits importierte Fotos bleiben natürlich auf der Platte.")) return;
           await api("/api/icloud/remove", { id: el.dataset.id }); refresh();

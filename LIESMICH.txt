@@ -284,6 +284,9 @@ NEUE FOTOS HINZUFÜGEN (Menü "Import")
   iCloud:  Konto hinzufügen (Name, Apple-ID, Passwort, dann Code vom iPhone). Danach reicht
            "Neue holen" – auch Fotos aus einer geteilten Bibliothek. Was schon auf der Platte ist,
            wird erkannt und nicht heruntergeladen. Die Anmeldung hält ca. 1–2 Monate.
+           "Neue holen" sieht nur nach, was seit dem letzten Mal dazukam (schnell); "Voller Abgleich"
+           geht die ganze iCloud-Bibliothek durch und findet auch alte Fotos, die erst später in iCloud
+           kamen – das passiert automatisch alle 30 Tage.
            Voraussetzung im iCloud-Konto: "Auf iCloud-Daten im Web zugreifen" an,
            "Erweiterter Datenschutz" aus.
   Google:  Google Takeout (nur Google Fotos, ZIP) herunterladen und den Ordner mit den ZIPs
