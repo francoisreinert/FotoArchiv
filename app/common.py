@@ -322,7 +322,7 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
                          ("trashed", "TEXT"), ("trash_from", "TEXT"), ("trash_side", "TEXT"),
                          ("edit", "TEXT"), ("doc_lines", "INTEGER"), ("doc_area", "REAL"), ("doc_no", "INTEGER DEFAULT 0"),
                          ("ev_bias", "REAL"), ("exp_mode", "INTEGER"), ("stack", "INTEGER"), ("stack_top", "INTEGER"),
-                         ("doc_state", "INTEGER"), ("pano", "TEXT")):
+                         ("doc_state", "INTEGER"), ("pano", "TEXT"), ("ocr", "TEXT"), ("ocr_ver", "INTEGER")):
             if col not in cols:
                 con.execute("ALTER TABLE items ADD COLUMN %s %s" % (col, typ))
         # Abdeckende Indizes: Übersicht, Kalender und Ordner lesen nur den Index statt jede Zeile
@@ -343,6 +343,10 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
             con.execute("ALTER TABLE albums ADD COLUMN cover INTEGER")
         if "private" not in acols:
             con.execute("ALTER TABLE albums ADD COLUMN private INTEGER DEFAULT 0")
+        if "kind" not in acols:  # 'doc' = Dokumentenalbum (steht unter „Dokumente“, nicht unter „Alben“)
+            con.execute("ALTER TABLE albums ADD COLUMN kind TEXT")
+            con.execute("UPDATE albums SET kind='doc' WHERE name='Dokumente' AND parent IS NULL")
+        con.execute("CREATE INDEX IF NOT EXISTS items_docset ON items(id) WHERE hidden = 4 OR doc_state = 1")
         if "private" not in {r[1] for r in con.execute("PRAGMA table_info(events)")}:
             con.execute("ALTER TABLE events ADD COLUMN private INTEGER DEFAULT 0")
         # selbst gewählte Titelbilder: kind = folder (Pfad) | month (JJJJ-MM) | event (id); Alben: albums.cover,

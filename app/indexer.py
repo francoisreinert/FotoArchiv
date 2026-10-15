@@ -621,7 +621,8 @@ def rebuild_fts(con, ids=None):
         rows = con.execute(sql).fetchall()
     for iid, name in rows:
         persons_of.setdefault(iid, []).append(name)
-    q = "SELECT id, path, name, kind, taken, place, camera, COALESCE(keywords,'') || ' ' || COALESCE(usertags,''), caption FROM items"
+    q = ("SELECT id, path, name, kind, taken, place, camera, COALESCE(keywords,'') || ' ' || COALESCE(usertags,''), "
+         "TRIM(COALESCE(caption,'') || ' ' || COALESCE(ocr,'')) FROM items")  # ocr: Text aus Dokumenten (ocr.py)
     extra = _extras(con)
     if ids is not None:
         items = con.execute(q + " WHERE id IN (%s)" % ph, list(ids)).fetchall()

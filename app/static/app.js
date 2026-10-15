@@ -436,14 +436,17 @@ const routes = {
         <div><b>${a.private_eff ? '<span class="privtag">🔒</span> ' : ""}${esc(a.name)}</b><small>${a.total.toLocaleString("de-DE")} Fotos</small></div></a>`;
     const evCard = e => `<a class="folder" href="#/ereignis/${e.id}">${coverOf(e.cover, e.private)}
         <div><b>${e.private ? '<span class="privtag">🔒</span> ' : ""}${esc(e.name)}</b><small>${fmtRange(e.start, e.end)} · ${e.count.toLocaleString("de-DE")}</small></div></a>`;
-    const top = d.albums.filter(a => a.parent == null);
+    const photoAlbums = d.albums.filter(a => a.kind !== "doc");
+    const top = photoAlbums.filter(a => a.parent == null);
     page.innerHTML = `<h1>Ereignisse <small>${d.events.length}</small><span style="flex:1"></span><button id="newev">Neues Ereignis</button></h1>
       <div class="folders">${d.events.map(evCard).join("") || '<span class="muted">Keine Ereignisse.</span>'}</div>
-      <h1 style="margin-top:28px">Alben <small>${d.albums.length}</small><span style="flex:1"></span><button id="newal">Neues Album</button></h1>
+      <h1 style="margin-top:28px">Alben <small>${photoAlbums.length}</small><span style="flex:1"></span><button id="newal">Neues Album</button></h1>
       <div class="folders">${top.map(albumCard).join("") || '<span class="muted">Keine Alben.</span>'}</div>
       <p class="muted" style="margin-top:24px">Tipp: In „Fotos“ Bilder markieren (Haken oben links im Bild, Shift = Bereich) und „+ Album“ oder „+ Ereignis“ wählen.
+      Alben für Dokumente stehen unter <a href="#/dokumente" data-doctab="alben">📄 Dokumente › Alben</a>.
       ${d.hidden ? ` · <a href="#/ausgeblendet">Ausgeblendete Fotos (${d.hidden})</a>` : ""}</p>`;
     main.appendChild(page);
+    bindDocTab(page);
     $("#newal", page).onclick = async () => {
       const name = await askText("Name des neuen Albums", "");
       if (name) { const r = await api("/api/albums", { name }); location.hash = "#/album/" + r.id; }
@@ -469,8 +472,10 @@ const routes = {
     const page = document.createElement("div");
     page.className = "page";
     page.style.paddingBottom = "0";
-    page.innerHTML = `<div class="crumbs"><a href="#/alben">Alben</a>${parent ? ` › <a href="#/album/${parent.id}">${esc(parent.name)}</a>` : ""} › ${esc(a.name)}
-        <span style="flex:1"></span><button id="apriv">${a.private ? "Privat aufheben" : "🔒 Privat"}</button>
+    const isDoc = a.kind === "doc";
+    page.innerHTML = `<div class="crumbs">${isDoc ? `<a href="#/dokumente" data-doctab="alben">📄 Dokumente</a>` : `<a href="#/alben">Alben</a>`}${parent ? ` › <a href="#/album/${parent.id}">${esc(parent.name)}</a>` : ""} › ${esc(a.name)}
+        <span style="flex:1"></span>${parent ? "" : `<button id="akind" title="${isDoc ? "Wieder als normales Album unter „Alben“ führen" : "Als Dokumentenalbum unter „Dokumente“ führen – die Fotos verschwinden aus der Zeitleiste, ihr Text wird erkannt"}">${isDoc ? "↩ Zu den Alben" : "📄 Zu den Dokumenten"}</button>`}
+        <button id="apriv">${a.private ? "Privat aufheben" : "🔒 Privat"}</button>
         <button id="aren">Umbenennen</button><button id="asub">Unteralbum anlegen</button>
         <button id="amove">Verschieben</button><button id="adel" class="danger">Album löschen</button></div>
       ${a.description ? `<p class="muted">${esc(a.description)}</p>` : ""}
@@ -479,6 +484,15 @@ const routes = {
         <div><b>${k.private_eff ? '<span class="privtag">🔒</span> ' : ""}${esc(k.name)}</b><small>${k.total.toLocaleString("de-DE")}</small></div></a>`).join("")}</div>` : ""}
       ${a.private_eff && !a.private ? `<p class="muted">🔒 Privat, weil ein übergeordnetes Album privat ist.</p>` : ""}`;
     main.appendChild(page);
+    bindDocTab(page);
+    const ak = $("#akind", page);
+    if (ak) ak.onclick = async () => {
+      if (!isDoc && !await confirmBox(`„${a.name}“ unter „Dokumente“ führen? Die Fotos darin gelten dann als Dokumente: nicht mehr in Zeitleiste und Kalender, ihr Text wird erkannt und ist durchsuchbar. Die Dateien bleiben, wo sie sind.`)) return;
+      await api(`/api/albums/${a.id}`, { kind: isDoc ? null : "doc" });
+      toast(isDoc ? "Steht jetzt wieder unter „Alben“" : "Steht jetzt unter „Dokumente › Alben“");
+      loadYears().catch(() => {});
+      routes.album(id);
+    };
     $("#apriv", page).onclick = async () => {
       if (!a.private && !await ensurePassword()) return;
       await api(`/api/albums/${a.id}`, { private: !a.private });
@@ -726,7 +740,8 @@ const routes = {
   async dokumente() {
     setSearchScope("Dokumente");
     const st = await api("/api/docs/status");
-    const tab = localStorageGet("docTab") || "neu";
+    let tab = localStorageGet("docTab") || "neu";
+    if (tab === "alben" && state.filters.q) tab = "neu";  // Suche läuft ohnehin über alle Dokumente
     const level = localStorageGet("docLevel") || "normal", type = localStorageGet("docType") || "";
     const LV = { streng: 14, normal: 10, weit: 6 };
     const opt = (v, l, cur) => `<option value="${v}"${v === cur ? " selected" : ""}>${l}</option>`;
@@ -734,7 +749,34 @@ const routes = {
     const tabs = `<div class="doctabs">
       <button data-tab="neu" class="${tab === "neu" ? "on" : ""}" title="Automatisch einsortiert, noch nicht entschieden">Neu <small>${num(st.neu)}</small></button>
       <button data-tab="behalten" class="${tab === "behalten" ? "on" : ""}" title="Dauerhaft behalten (Album „Dokumente“)">Behalten <small>${num(st.behalten)}</small></button>
-      <button data-tab="vorschlag" class="${tab === "vorschlag" ? "on" : ""}" title="Unsichere Treffer – noch in der Zeitleiste">Vorschläge <small>${num(st.vorschlag)}</small></button></div>`;
+      <button data-tab="vorschlag" class="${tab === "vorschlag" ? "on" : ""}" title="Unsichere Treffer – noch in der Zeitleiste">Vorschläge <small>${num(st.vorschlag)}</small></button>
+      <button data-tab="alben" class="${tab === "alben" ? "on" : ""}" title="Eigene Alben nur für Dokumente – getrennt von den Fotoalben">Alben</button></div>`;
+    const oc = st.ocr || {};
+    const ocrInfo = !oc.available ? `<p class="muted" style="margin:8px 0 0">🔎 Text in Dokumenten erkennen und durchsuchen gibt es bisher nur unter Windows.</p>`
+      : `<p class="muted" style="margin:8px 0 0">🔎 <b>Suche findet auch Text in den Dokumenten</b> (Suchfeld oben – sucht in allen Dokumenten).
+        ${oc.running ? `Texterkennung läuft: ${num(oc.done)} von ${num(oc.total)} …` : oc.open ? `${num(oc.open)} noch ohne Texterkennung – läuft von selbst <button id="docr">Jetzt</button>` : `Text in ${num(oc.with_text)} Dokumenten erkannt.`}</p>`;
+    if (tab === "alben") {
+      clearMain();
+      const d = await api("/api/albums");
+      const docs = d.albums.filter(a => a.kind === "doc" && a.parent == null);
+      const page = document.createElement("div");
+      page.className = "page";
+      page.innerHTML = `<h1>📄 Dokumente</h1>${tabs}${ocrInfo}
+        <p class="muted">Alben nur für Dokumente – z. B. „Versicherungen“, „Auto“, „Ausweise“. Sie stehen nicht unter „Alben“; was hineinkommt,
+        verschwindet aus Zeitleiste und Kalender. Dokumente markieren › „+ Album“, oder ein bestehendes Album öffnen › „📄 Zu den Dokumenten“.</p>
+        <div class="row"><button class="primary" id="newdal">+ Neues Dokumentenalbum</button></div>
+        <div class="folders" style="margin-top:14px">${docs.map(a => `<a class="folder" href="#/album/${a.id}">${a.cover ? `<img loading="lazy" src="/thumb/${a.cover}" alt="">` : a.private_eff && !state.priv.unlocked ? `<div class="lockcell">🔒</div>` : `<img alt="">`}
+          <div><b>${a.private_eff ? '<span class="privtag">🔒</span> ' : ""}${esc(a.name)}</b><small>${a.total.toLocaleString("de-DE")}</small></div></a>`).join("") || '<span class="muted">Noch keine Dokumentenalben.</span>'}</div>`;
+      main.appendChild(page);
+      $$(".doctabs [data-tab]", page).forEach(b => b.onclick = () => { localStorageSet("docTab", b.dataset.tab); route(); });
+      $("#newdal", page).onclick = async () => {
+        const name = await askText("Name des neuen Dokumentenalbums", "");
+        if (name) { const r = await api("/api/albums", { name, kind: "doc" }); location.hash = "#/album/" + r.id; }
+      };
+      const ob = $("#docr", page);
+      if (ob) ob.onclick = async () => { await api("/api/ocr/start", {}); toast("Texterkennung läuft"); setTimeout(route, 1500); };
+      return;
+    }
     const scanInfo = st.running
       ? `<div class="docscan"><b>📄 Dokumente werden gesucht …</b> ${num(st.done)} von ${num(st.total)} Fotos geprüft${st.eta ? " · noch ca. " + fmtEta(st.eta) : ""}
           ${st.sorted ? ` · ${num(st.sorted)} einsortiert` : ""}<div class="progress"><i style="width:${st.total ? (100 * st.done / st.total).toFixed(1) : 0}%"></i></div>
@@ -750,6 +792,7 @@ const routes = {
       behalten: "Dauerhaft behaltene Dokumente – auch im Album „Dokumente“. Nicht in Zeitleiste und Kalender.",
       vorschlag: "Fotos mit etwas Text, bei denen es nicht sicher ist. Sie stehen noch in der Zeitleiste. Markieren › <b>Einsortieren</b>, <b>✓ Behalten</b> oder <b>Kein Dokument</b>.",
     }[tab];
+    if (state.filters.q) params.docs = "alle";
     await showGrid("📄 Dokumente", params, {
       context: { docs: tab },
       headExtra: `<select id="dtype" title="Art">${opt("", "Alle", type)}${opt("paper", "Papier (Briefe, Rechnungen …)", type)}${opt("screen", "Bildschirmfotos", type)}</select>
@@ -766,7 +809,9 @@ const routes = {
         $("#dauto", head).onchange = async e => { await api("/api/docs/auto", { auto: e.target.value }); toast("Gespeichert"); route(); };
       },
     });
-    main.insertAdjacentHTML("afterbegin", `<div class="page" style="padding-bottom:0">${tabs}${scanInfo}${sortInfo}<p class="muted" style="margin:8px 0 0">${help}</p></div>`);
+    main.insertAdjacentHTML("afterbegin", `<div class="page" style="padding-bottom:0">${tabs}${scanInfo}${sortInfo}<p class="muted" style="margin:8px 0 0">${help}</p>${ocrInfo}</div>`);
+    const ob = $("#docr");
+    if (ob) ob.onclick = async () => { await api("/api/ocr/start", {}); toast("Texterkennung läuft"); setTimeout(route, 1500); };
     $$(".doctabs [data-tab]").forEach(b => b.onclick = () => { localStorageSet("docTab", b.dataset.tab); route(); });
     const scan = $("#dscan"), stop = $("#dstop"), sortall = $("#dsortall");
     if (scan) scan.onclick = async () => { try { await api("/api/docs/scan", {}); route(); } catch (e) { toast(e.message, 8000); } };
@@ -2886,7 +2931,7 @@ async function pickAlbum(title, opts = {}) {
   const d = await api("/api/albums");
   const byId = Object.fromEntries(d.albums.map(a => [a.id, a]));
   const path = a => { const parts = []; for (let x = a, k = 0; x && k < 10; x = byId[x.parent], k++) parts.unshift(x.name); return parts.join(" › "); };
-  let items = d.albums.filter(a => a.id !== opts.exclude).map(a => ({ id: a.id, label: path(a), note: a.count }))
+  let items = d.albums.filter(a => a.id !== opts.exclude).map(a => ({ id: a.id, label: (a.kind === "doc" ? "📄 " : "") + path(a), note: a.count }))
     .sort((x, y) => x.label.localeCompare(y.label, "de"));
   if (opts.allowTop) items.unshift({ top: true, label: "(oberste Ebene)" });
   return pickFrom(title, items, { allowNew: opts.allowNew, placeholder: opts.allowNew ? "Album suchen oder neuen Namen eingeben" : "Album suchen" });
@@ -3283,6 +3328,10 @@ const FOLD_HELP = {
   web: "Alben als Webseite mit Link teilen.",
   amazon: "Fotos mit der Amazon-Photos-App sichern.",
 };
+// Links „📄 Dokumente › Alben“: Reiter vorher merken
+function bindDocTab(root) {
+  $$("[data-doctab]", root).forEach(x => x.addEventListener("click", () => localStorageSet("docTab", x.dataset.doctab)));
+}
 function foldState() { try { return JSON.parse(localStorage.getItem("fa_fold") || "{}"); } catch { return {}; } }
 function foldCards(page) {
   const st = foldState();

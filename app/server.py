@@ -109,7 +109,11 @@ def build_where(p):
     # hidden = 4: als Dokument einsortiert (docs.py) – nicht in Zeitleiste/Kalender, aber in Alben, Ordnern, Suche
     hv = {"1": 1, "2": 2}.get(p.get("hidden"), 0)
     docs_view = p.get("docs")
-    if docs_view == "neu":
+    if docs_view and p.get("q"):  # Suche auf der Dokumente-Seite: in allen Dokumenten (auch erkannter Text)
+        docs_view = "alle"
+    if docs_view == "alle":
+        where.append("(i.hidden = 4 OR (COALESCE(i.hidden, 0) IN (0, 3) AND i.doc_state = 1))")
+    elif docs_view == "neu":
         where.append("i.hidden = 4 AND i.doc_state IS NULL")
     elif docs_view == "behalten":
         where.append("COALESCE(i.hidden, 0) IN (0, 3, 4) AND i.doc_state = 1")
@@ -1143,8 +1147,8 @@ def r_albums(h, p):
     albums = []
     hide = locked(h)
     priv_albums = privacy.private_albums(c)
-    for aid, name, parent, desc, own_cover, priv in c.execute(
-            "SELECT id, name, parent, description, cover, COALESCE(private,0) FROM albums ORDER BY name COLLATE NOCASE"):
+    for aid, name, parent, desc, own_cover, priv, akind in c.execute(
+            "SELECT id, name, parent, description, cover, COALESCE(private,0), kind FROM albums ORDER BY name COLLATE NOCASE"):
         n, cover, open_cover = c.execute(
             "SELECT COUNT(*), MAX(ai.item_id), MAX(CASE WHEN COALESCE(i.priv_eff,0)=0 THEN ai.item_id END) "
             "FROM album_items ai JOIN items i ON i.id=ai.item_id "
@@ -1156,7 +1160,7 @@ def r_albums(h, p):
             elif cover and c.execute("SELECT priv_eff FROM items WHERE id=?", (cover,)).fetchone()[0]:
                 cover = open_cover
         albums.append({"id": aid, "name": name, "parent": parent, "description": desc, "count": n, "cover": cover,
-                       "private": bool(priv), "private_eff": aid in priv_albums})
+                       "private": bool(priv), "private_eff": aid in priv_albums, "kind": akind})
     # Zahlen der Unteralben mitzählen
     kids = {}
     for a in albums:
@@ -1318,11 +1322,18 @@ def r_album_create(h, p):
     if not name:
         return h.send_json({"error": "Name fehlt"}, 400)
     c = db()
-    aid = c.execute("INSERT INTO albums(name, parent, source) VALUES(?, ?, 'user')",
-                    (name, b.get("parent"))).lastrowid
+    kind = "doc" if b.get("kind") == "doc" else None
+    if b.get("parent"):
+        kind = (c.execute("SELECT kind FROM albums WHERE id=?", (b["parent"],)).fetchone() or [None])[0]
+    aid = c.execute("INSERT INTO albums(name, parent, source, kind) VALUES(?, ?, 'user', ?)",
+                    (name, b.get("parent"), kind)).lastrowid
     ids = _ids(b)
     c.executemany("INSERT OR IGNORE INTO album_items(album_id, item_id) VALUES(?,?)", [(aid, i) for i in ids])
     c.commit()
+    if kind == "doc" and ids:
+        import docs
+
+        docs.mark_kept(c, ids)
     _refresh(ids)
     h.send_json({"ok": True, "id": aid})
 
@@ -1339,6 +1350,16 @@ def r_album_update(h, p, aid):
         if par is not None and int(par) in album_tree_ids(aid):
             return h.send_json({"error": "Ein Album kann nicht in sich selbst liegen"}, 400)
         c.execute("UPDATE albums SET parent=? WHERE id=?", (par, aid))
+    if "kind" in b:  # „Zu den Dokumenten“ / „Zu den Alben“ – gilt für den ganzen Albumbaum
+        kind = "doc" if b["kind"] == "doc" else None
+        tree = list(album_tree_ids(aid))
+        c.executemany("UPDATE albums SET kind=? WHERE id=?", [(kind, x) for x in tree])
+        if kind == "doc":
+            import docs
+
+            ph = ",".join("?" * len(tree))
+            docs.mark_kept(c, [r[0] for r in c.execute(
+                "SELECT DISTINCT item_id FROM album_items WHERE album_id IN (%s)" % ph, tree)])
     if "cover" in b:
         c.execute("UPDATE albums SET cover=? WHERE id=?", (b["cover"], aid))
     if "description" in b:
@@ -1389,6 +1410,10 @@ def r_album_add(h, p, aid):
     c.executemany("INSERT OR IGNORE INTO album_items(album_id, item_id) VALUES(?,?)", [(int(aid), i) for i in ids])
     c.executemany("DELETE FROM album_removed WHERE album_id=? AND item_id=?", [(int(aid), i) for i in ids])
     c.commit()
+    if (c.execute("SELECT kind FROM albums WHERE id=?", (int(aid),)).fetchone() or [None])[0] == "doc":
+        import docs
+
+        docs.mark_kept(c, ids)  # Dokumentenalbum: raus aus der Zeitleiste, Text wird erkannt
     _refresh(ids)
     h.send_json({"ok": True})
 
@@ -2868,8 +2893,20 @@ def r_amazon_sync(h, p):
 
 def r_docs_status(h, p):
     import docs
+    import ocr
 
-    h.send_json(docs.status(db()))
+    st = docs.status(db())
+    st["ocr"] = ocr.counts(db())
+    h.send_json(st)
+
+
+def r_ocr_start(h, p):
+    import ocr
+
+    if not ocr.available():
+        return h.send_json({"error": "Texterkennung gibt es bisher nur unter Windows"}, 400)
+    threading.Thread(target=ocr.run, daemon=True).start()
+    h.send_json({"ok": True})
 
 
 def r_docs_scan(h, p):
@@ -3005,6 +3042,7 @@ ROUTES = [
     ("POST", r"/api/items/tags", r_items_tags),
     ("POST", r"/api/items/person", r_items_person),
     ("POST", r"/api/albums", r_album_create),
+    ("POST", r"/api/ocr/start", r_ocr_start),
     ("POST", r"/api/albums/(\d+)", r_album_update),
     ("POST", r"/api/albums/(\d+)/delete", r_album_delete),
     ("POST", r"/api/albums/(\d+)/add", r_album_add),
@@ -3235,6 +3273,9 @@ def main():
             import inbox
 
             threading.Thread(target=inbox.loop, daemon=True).start()
+            import ocr
+
+            threading.Thread(target=ocr.loop, daemon=True).start()
         except Exception as ex:
             print(" Eingangsordner nicht gestartet:", ex)
     threading.Timer(5, resume).start()

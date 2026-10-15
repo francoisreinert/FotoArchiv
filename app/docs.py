@@ -53,13 +53,25 @@ def sort_in(con, ids=None, level=None):
 def keep(con, ids):
     """Dauerhaft behalten: ins Album "Dokumente", bleibt aus der Zeitleiste."""
     row = con.execute("SELECT id FROM albums WHERE name=? AND parent IS NULL", (ALBUM,)).fetchone()
-    aid = row[0] if row else con.execute("INSERT INTO albums(name) VALUES(?)", (ALBUM,)).lastrowid
-    for i in ids:
-        con.execute("UPDATE items SET doc_state=1, doc_no=0, hidden=CASE WHEN COALESCE(hidden,0)=0 THEN %d ELSE hidden END "
-                    "WHERE id=?" % SORTED, (i,))
-        con.execute("INSERT OR IGNORE INTO album_items(album_id, item_id) VALUES(?,?)", (aid, i))
+    aid = row[0] if row else con.execute("INSERT INTO albums(name, kind) VALUES(?, 'doc')", (ALBUM,)).lastrowid
+    mark_kept(con, ids)
+    con.executemany("INSERT OR IGNORE INTO album_items(album_id, item_id) VALUES(?,?)", [(aid, i) for i in ids])
     con.commit()
     return aid
+
+
+def mark_kept(con, ids):
+    """Als behaltenes Dokument markieren (aus der Zeitleiste, Texterkennung folgt) – z. B. beim Hinzufügen zu einem
+    Dokumentenalbum. Videos bleiben unberührt."""
+    con.executemany("UPDATE items SET doc_state=1, doc_no=0, hidden=CASE WHEN COALESCE(hidden,0)=0 THEN %d ELSE hidden END "
+                    "WHERE id=? AND kind='photo'" % SORTED, [(i,) for i in ids])
+    con.commit()
+    try:
+        import ocr
+
+        ocr.start()
+    except Exception:
+        pass
 
 
 def not_doc(con, ids):

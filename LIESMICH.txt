@@ -118,7 +118,7 @@ VIDEOSCHNITT
 
 DOKUMENTE FINDEN UND AUSSORTIEREN
   FotoArchiv erkennt Fotos mit viel Text – Briefe, Rechnungen, Formulare, Notizen, Ausweise, Bildschirmfotos.
-  Erkannt wird nur, DASS Text zu sehen ist – gelesen wird nichts, alles bleibt auf dem Computer.
+  Alles bleibt auf dem Computer – nichts wird an einen Dienst geschickt.
   Automatisch: nach jedem Einlesen und jedem Import (iCloud, Takeout, Ordner) werden die neuen Fotos geprüft;
   sichere Dokumente wandern aus Zeitleiste und Kalender nach "Dokumente › Neu" (die Dateien bleiben, wo sie
   sind; in Ordnern, Alben und der Suche sind sie weiter zu sehen). Einstellbar oben: sichere / auch
@@ -130,6 +130,13 @@ DOKUMENTE FINDEN UND AUSSORTIEREN
   "Vorschläge" = unsichere Treffer, die noch in der Zeitleiste stehen ("Einsortieren" nimmt sie heraus).
   Endgültig Gelöschtes (Papierkorb geleert) holt kein Import wieder – egal aus welcher Quelle
   (gleicher Name+Größe oder gleiche Aufnahme). Im Import-Protokoll: "Übersprungen, früher gelöscht".
+  Dokumentenalben: Reiter "Alben" auf der Dokumente-Seite › "+ Neues Dokumentenalbum" (z. B. Versicherungen,
+  Auto, Ausweise). Sie stehen nicht unter "Alben & Ereignisse"; was hineinkommt, verschwindet aus Zeitleiste
+  und Kalender. Ein bestehendes Album lässt sich mit "📄 Zu den Dokumenten" dorthin umstellen (und zurück).
+  Text in Dokumenten (nur Windows): FotoArchiv liest den Text aller Dokumente mit der in Windows eingebauten
+  Texterkennung (offline, auch gedrehte Fotos) – danach findet die Suche auch Wörter aus Briefen, Rechnungen
+  usw. Auf der Dokumente-Seite sucht das Suchfeld in allen Dokumenten. Der Text bleibt im Katalog auf der
+  Platte; in die Archiv-Ansicht im Bucket und auf Webseiten kommt er nicht.
 
 WEITERE FOTOORDNER (NAS, zweite Platte, Ordner auf dem Computer)
   Bibliothek › "Weitere Fotoordner" › "+ Fotoordner hinzufügen …": Ordner wählen (oder Pfad eintippen,
