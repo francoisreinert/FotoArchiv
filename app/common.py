@@ -352,6 +352,8 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
         # selbst gewählte Titelbilder: kind = folder (Pfad) | month (JJJJ-MM) | event (id); Alben: albums.cover,
         # Personen: persons.cover_face
         con.execute("CREATE TABLE IF NOT EXISTS covers (kind TEXT, key TEXT, item_id INTEGER, PRIMARY KEY(kind, key))")
+        # Duplikate: Struktur-Abstand zweier Vorschaubilder (indexer.structure_diff), a < b; Zwischenspeicher
+        con.execute("CREATE TABLE IF NOT EXISTS dup_sim (a INTEGER, b INTEGER, score REAL, PRIMARY KEY(a, b))")
         con.commit()
     return con
 

@@ -8,6 +8,7 @@ import datetime
 import json
 import multiprocessing as mp
 import os
+import re
 import sqlite3
 import sys
 import threading
@@ -535,17 +536,60 @@ def geocode(con):
         PROGRESS.done = i + len(chunk)
 
 
+_SHOT = re.compile(r"^(.*?)(\d{2,})")
+SIM_SAME_NAME_OTHER_NUMBER = 0.01  # IMG_2816 / IMG_2817: nur fast identisch = Kopie, sonst Serienbild
+SIM_OTHER_NAME = 0.03             # ganz andere Namen: gleiche Bildstruktur (Farbfilter/Helligkeit egal)
+
+
+def _shot(name):
+    """(Präfix, Bildnummer) aus dem Dateinamen, z. B. IMG_2816-1.HEIC → ('img_', '2816')."""
+    m = _SHOT.match(name or "")
+    return (m.group(1).lower(), m.group(2)) if m else None
+
+
+def structure_diff(a, b):
+    """Abstand zweier Vorschaubilder nach Rang-Angleichung der Helligkeit (Tonwertkurven, Filter, Kompression
+    spielen keine Rolle; Bewegung, andere Pose, anderer Ausschnitt schon). 0 = gleich. None = kein Vorschaubild.
+    Kalibriert 15.10.2026: echte Kopien ≈ 0,000–0,006, Bearbeitungen ≤ 0,03, Serienbilder meist 0,02–0,08."""
+    import io
+
+    import numpy as np
+    from PIL import Image
+
+    vs = []
+    for iid in (a, b):
+        data = common.THUMBS.get(iid)
+        if not data:
+            return None
+        im = Image.open(io.BytesIO(data)).convert("L").resize((48, 48), Image.BILINEAR)
+        v = np.asarray(im, dtype=np.float32).ravel()
+        vs.append(v.argsort().argsort().astype(np.float32) / (v.size - 1))
+    return float(np.abs(vs[0] - vs[1]).mean())
+
+
+def _similar(con, cache, a, b, limit):
+    key = (min(a, b), max(a, b))
+    if key not in cache:
+        cache[key] = structure_diff(*key)
+        con.execute("INSERT OR REPLACE INTO dup_sim(a, b, score) VALUES(?,?,?)", (key[0], key[1], cache[key]))
+    s = cache[key]
+    return s is None or s <= limit  # ohne Vorschaubild wie bisher
+
+
 def mark_duplicates(con):
     """Doppelte Fotos (gleiche Aufnahmezeit, Größe und praktisch gleicher Bildinhalt)
-    sowie RAW+JPEG-Paare. Behalten wird jeweils die größte Datei."""
+    sowie RAW+JPEG-Paare. Behalten wird jeweils die größte Datei.
+    Serienbilder (gleiche Sekunde, andere Bildnummer) und andere Aufnahmen mit fast gleichem dhash werden über
+    structure_diff aussortiert – nur bei Paaren mit unterschiedlicher Dateigröße und nicht derselben Bildnummer."""
     PROGRESS.set_phase("Duplikate suchen")
     groups, photos, raws = {}, {}, []
     never = {r[0] for r in con.execute("SELECT item_id FROM dup_keep")}
+    cache = {(a, b): s for a, b, s in con.execute("SELECT a, b, score FROM dup_sim")}
     for iid, folder, name, ext, kind, size, taken, w, h, ph, stack, ev in con.execute(
             "SELECT id, folder, name, ext, kind, size, taken, width, height, phash, stack, ev_bias FROM items "
             "WHERE COALESCE(hidden,0) != 2 ORDER BY id"):
         if taken and w and taken_src_ok(taken):
-            groups.setdefault((taken, kind, min(w, h), max(w, h)), []).append((size or 0, iid, ph, stack, ev))
+            groups.setdefault((taken, kind, min(w, h), max(w, h)), []).append((size or 0, iid, ph, stack, ev, name))
         stem = (folder, name[:-(len(ext) + 1)].lower())
         if kind == "photo":
             photos.setdefault(stem, iid)
@@ -557,16 +601,23 @@ def mark_duplicates(con):
             continue
         members.sort(key=lambda m: (-m[0], m[1]))
         keep = []
-        for size, iid, ph, st, ev in members:
-            for _ksize, kid, kph, kst, kev in ([] if iid in never else keep):
+        for size, iid, ph, st, ev, name in members:
+            for ksize, kid, kph, kst, kev, kname in ([] if iid in never else keep):
                 # Belichtungsreihe (stacks.py) bzw. andere Belichtungskorrektur: keine Kopie
                 if (st is not None and st == kst) or (ev is not None and kev is not None and ev != kev):
                     continue
                 if ph is not None and kph is not None and bin((ph ^ kph) & 0xFFFFFFFFFFFFFFFF).count("1") <= 5:
+                    if size != ksize:
+                        s1, s2 = _shot(name), _shot(kname)
+                        if not (s1 and s1 == s2):  # nicht dieselbe Bildnummer (Kopie „-1“, „(2)“, Bearbeitung)
+                            other_number = bool(s1 and s2 and s1[0] == s2[0])
+                            if not _similar(con, cache, iid, kid,
+                                            SIM_SAME_NAME_OTHER_NUMBER if other_number else SIM_OTHER_NAME):
+                                continue  # Serienbild bzw. andere Aufnahme
                     dups.append((kid, iid))
                     break
             else:
-                keep.append((size, iid, ph, st, ev))
+                keep.append((size, iid, ph, st, ev, name))
     con.execute("UPDATE items SET dup_of=NULL, raw_of=NULL")
     con.executemany("UPDATE items SET dup_of=? WHERE id=?", dups)
     con.executemany("UPDATE items SET raw_of=? WHERE id=?", [(photos[s], i) for s, i in raws if s in photos])
