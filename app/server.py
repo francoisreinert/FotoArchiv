@@ -2949,6 +2949,9 @@ def r_docs_sort(h, p):
     b = h.body()
     if b.get("ids"):
         n = docs.sort_in(db(), _visible_ids(h, _ids(b)), "hand")
+        import ocr
+
+        ocr.start()  # Text gleich erkennen
     else:
         n = docs.sort_in(db(), None, docs.LEVELS.get(b.get("level")) or None)
     _tree_cache.clear()

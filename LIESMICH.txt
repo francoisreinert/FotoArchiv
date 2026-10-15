@@ -133,6 +133,8 @@ DOKUMENTE FINDEN UND AUSSORTIEREN
   Dokumentenalben: Reiter "Alben" auf der Dokumente-Seite › "+ Neues Dokumentenalbum" (z. B. Versicherungen,
   Auto, Ausweise). Sie stehen nicht unter "Alben & Ereignisse"; was hineinkommt, verschwindet aus Zeitleiste
   und Kalender. Ein bestehendes Album lässt sich mit "📄 Zu den Dokumenten" dorthin umstellen (und zurück).
+  Ein Dokument in Zeitleiste oder Ordner gefunden? Markieren › "Mehr …" › "📄 Zu den Dokumenten …":
+  nur einsortieren (Neu), behalten oder gleich in ein Dokumentenalbum (auch neu anlegen).
   Text in Dokumenten (nur Windows): FotoArchiv liest den Text aller Dokumente mit der in Windows eingebauten
   Texterkennung (offline, auch gedrehte Fotos) – danach findet die Suche auch Wörter aus Briefen, Rechnungen
   usw. Auf der Dokumente-Seite sucht das Suchfeld in allen Dokumenten. Der Text bleibt im Katalog auf der

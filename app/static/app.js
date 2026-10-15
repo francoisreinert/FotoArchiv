@@ -2191,6 +2191,7 @@ async function runAction(act, ev) {
       ["date", "Datum ändern …"],
       ["rmperson", "Person entfernen …"],
       ["rmtag", "Stichwort entfernen …"],
+      ctx.trash ? null : ["todoc", "📄 Zu den Dokumenten …"],
       "-",
       ctx.album ? ["rmalbum", `Aus Album „${ctx.albumName}“ entfernen`] : null,
       ctx.album && n === 1 ? ["cover", "Als Titelbild des Albums"] : null,
@@ -2212,6 +2213,22 @@ async function runAction(act, ev) {
       const m = d.dataset.m;
       if (m === "del" || m === "restore" || m === "purge") return runAction(m);
       if (m === "nodoc") { await api("/api/docs/not", { ids }); return done(`${n} aus der Dokumentenliste genommen`, true); }
+      if (m === "todoc") {  // Dokument in Zeitleiste/Ordner gefunden: einsortieren, behalten oder in ein Dokumentenalbum
+        const d = await api("/api/albums");
+        const choices = [{ id: "neu", label: "Nur einsortieren – später entscheiden (Dokumente › Neu)" },
+          { id: "keep", label: "Behalten (Dokumente › Behalten)" },
+          ...d.albums.filter(a => a.kind === "doc").map(a => ({ id: a.id, label: "📄 " + a.name, note: a.count }))];
+        const r = await pickFrom(`${n === 1 ? "Foto" : n + " Fotos"} zu den Dokumenten …`, choices,
+          { allowNew: true, placeholder: "Dokumentenalbum suchen oder neuen Namen eingeben" });
+        if (!r) return;
+        let msg;
+        if (r.new) { await api("/api/albums", { name: r.new, ids, kind: "doc" }); msg = `${n} → neues Dokumentenalbum „${r.new}“`; }
+        else if (r.id === "neu") { await api("/api/docs/sort", { ids }); msg = `${n} zu den Dokumenten einsortiert (Dokumente › Neu)`; }
+        else if (r.id === "keep") { await api("/api/docs/keep", { ids }); msg = `${n} als Dokument behalten`; }
+        else { await api(`/api/albums/${r.id}/add`, { ids }); msg = `${n} → ${r.label}`; }
+        loadYears().catch(() => {});
+        return done(msg, true);
+      }
       if (m === "unfav") { await api("/api/items/fav", { ids, fav: false }); done(`Favorit bei ${n} Fotos entfernt`, ctx.fav); }
       else if (m === "rotr" || m === "rotl") {
         toast(`${n} Fotos werden gedreht …`, 6000);
