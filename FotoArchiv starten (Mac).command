@@ -15,7 +15,7 @@ if [ ! -f "$RT/ok" ]; then
   tar -xzf "$HERE/runtime/python-$ARCH.tar.gz" -C "$RT" || { echo "Einrichtung fehlgeschlagen"; read -r; exit 1; }
   xattr -dr com.apple.quarantine "$RT" 2>/dev/null
   "$PY" -m pip install --no-index --disable-pip-version-check -q --find-links "$HERE/runtime/wheels-$ARCH" \
-    pillow pillow-heif numpy opencv-python-headless rawpy av icloudpd samsungtvws segno || { echo "Einrichtung fehlgeschlagen"; read -r; exit 1; }
+    pillow pillow-heif numpy opencv-python-headless rawpy av icloudpd samsungtvws segno onnxruntime || { echo "Einrichtung fehlgeschlagen"; read -r; exit 1; }
   touch "$RT/ok"
 fi
 "$PY" "$HERE/app/server.py" "$@"

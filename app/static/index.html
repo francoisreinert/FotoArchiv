@@ -19,17 +19,18 @@
     <input id="search" type="search" placeholder="Suchen: Ort, Ordner, Jahr, Monat, Kamera, Stichwort …" autocomplete="off">
     <div id="suggest" hidden></div>
   </div>
-  <div id="kindsw" class="kindsw" title="Nur Fotos oder nur Videos zeigen (gilt für alle Ansichten)"><button data-kind="" class="on">Alle</button><button data-kind="photo">📷 Fotos</button><button data-kind="video">🎬 Videos</button><button data-kind="pano" hidden title="Nur 360°-Fotos (auch Suchwort „360“)">🌐 360°</button></div>
+  <div id="kindsw" class="kindsw" title="Nur Fotos oder nur Videos zeigen (gilt für alle Ansichten)"><button data-kind="" class="on">Alle</button><button data-kind="photo">📷 Fotos</button><button data-kind="video" title="Videos ohne die kurzen Live-Photo-Bewegungen">🎬 Videos</button><button data-kind="live" hidden title="Nur Live Photos – die kurzen Bewegungen zu iPhone-Fotos">◎ Live</button><button data-kind="pano" hidden title="Nur 360°-Fotos (auch Suchwort „360“)">🌐 360°</button></div>
   <button id="camsw" class="ghost camsw" title="Nach Kamera filtern (EXIF) – zeigt die Kameras der aktuellen Ansicht">📷 Kamera ▾</button>
   <button id="filterbtn" class="ghost" title="Filter">Filter</button>
   <button id="lockbtn" class="ghost" hidden></button>
+  <button id="hotbtn" class="ghost" hidden></button>
   <div id="indexstatus" hidden></div>
 </header>
 <div id="filters" hidden>
   <label>Von <input type="date" id="f-from"></label>
   <label>Bis <input type="date" id="f-to"></label>
   <label>Art
-    <select id="f-kind"><option value="">Alles</option><option value="photo">Fotos</option><option value="video">Videos</option><option value="raw">nur RAW</option><option value="pano">nur 360°-Fotos</option></select>
+    <select id="f-kind"><option value="">Alles</option><option value="photo">Fotos</option><option value="video">Videos (ohne Live Photos)</option><option value="live">Live Photos</option><option value="raw">nur RAW</option><option value="pano">nur 360°-Fotos</option></select>
   </label>
   <label><input type="checkbox" id="f-fav"> nur Favoriten</label>
   <label><input type="checkbox" id="f-nodate"> ohne sicheres Datum</label>
@@ -38,7 +39,7 @@
     <select id="f-stacks"><option value="">zusammengefasst</option><option value="open">einzeln zeigen</option><option value="only">nur Belichtungsreihen</option></select>
   </label>
   <label>Sortierung
-    <select id="f-sort"><option value="desc">Neueste zuerst</option><option value="asc">Älteste zuerst</option></select>
+    <select id="f-sort"><option value="asc">Älteste zuerst</option><option value="desc">Neueste zuerst</option></select>
   </label>
   <button id="f-reset" class="ghost">Zurücksetzen</button>
 </div>
@@ -53,6 +54,8 @@
     <a href="#/karte" data-nav="karte">Karte</a>
     <a href="#/favoriten" data-nav="favoriten">Favoriten</a>
     <a href="#/dokumente" data-nav="dokumente">Dokumente</a>
+    <a href="#/inhalt" data-nav="inhalt" title="Nach dem suchen, was auf den Fotos zu sehen ist (Fußball, Strand …), und heikle Fotos prüfen – alles lokal">Bildinhalt</a>
+    <a href="#/beiseite" data-nav="beiseite" title="Fotos, die nicht in die Zeitleiste gehören – mit eigener Zeitleiste und eigenem Kalender">Beiseite</a>
     <a href="#/duplikate" data-nav="duplikate">Duplikate</a>
     <a href="#/video" data-nav="video">Videoschnitt</a>
     <a href="#/papierkorb" data-nav="papierkorb">Papierkorb</a>
@@ -99,6 +102,12 @@
   <button data-act="dockeep" class="docbtn primary" hidden title="Dauerhaft behalten – Album „Dokumente“, nicht in der Zeitleiste">✓ Behalten</button>
   <button data-act="docsort" class="docbtn" hidden title="Aus der Zeitleiste nehmen, unter „Neu“ entscheiden">Einsortieren</button>
   <button data-act="docno" class="docbtn" hidden title="Kein Dokument – zurück in die Zeitleiste, wird nie wieder einsortiert">Kein Dokument</button>
+  <button data-act="nudepriv" class="nudebtn" hidden title="Markierte Fotos privat machen – nie auf Fernseher, iCloud oder Web-Freigaben">🔒 Privat</button>
+  <button data-act="nudeok" class="nudebtn primary" data-tabs="nackt knapp" hidden title="Ja, heikel – mit dem Schalter „👙“ aus der Zeitleiste ausblendbar, nie per DLNA auf dem Fernseher">✓ Bestätigen</button>
+  <button data-act="nudeknapp" class="nudebtn" data-tabs="nackt ok" hidden title="Gehört zu „Knapp bekleidet“ (Bikini, Unterwäsche) – bleibt so">→ Knapp/Bikini</button>
+  <button data-act="nudenackt" class="nudebtn" data-tabs="knapp ok" hidden title="Gehört zu „Nackt“ – bleibt so">→ Nackt</button>
+  <button data-act="nudeno" class="nudebtn" hidden title="Fehltreffer: nicht heikel – taucht hier nicht mehr auf">Nicht heikel</button>
+  <button data-act="nudeyes" class="nudebtn" hidden title="Doch heikel – zurück in die Prüfliste">↩ Doch heikel</button>
   <button data-act="del" class="docbtn danger" hidden title="Kurzlebige Dokumentfotos in den Papierkorb">🗑 Papierkorb</button>
   <button data-act="show" title="Diashow mit den markierten Fotos">▶ Diashow</button>
   <button data-act="share" title="Exportieren / teilen">Teilen …</button>

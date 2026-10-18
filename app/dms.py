@@ -26,7 +26,7 @@ DEVICE = "urn:schemas-upnp-org:device:MediaServer:1"
 CDS = "urn:schemas-upnp-org:service:ContentDirectory:1"
 CMS = "urn:schemas-upnp-org:service:ConnectionManager:1"
 VISIBLE = ("COALESCE(i.priv_eff,0)=0 AND COALESCE(i.hidden,0)=0 AND i.dup_of IS NULL AND i.raw_of IS NULL "
-           "AND i.proc_ver > 0")
+           "AND i.proc_ver > 0 AND i.id NOT IN (SELECT id FROM items WHERE nude <> 0 AND nude > 0 AND nude_fix = 1)")  # nie heikle (content.py)
 PHOTO_PI = "http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_LRG;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=00f00000000000000000000000000000"
 THUMB_PI = "http-get:*:image/jpeg:DLNA.ORG_PN=JPEG_TN;DLNA.ORG_OP=01;DLNA.ORG_FLAGS=00f00000000000000000000000000000"
 

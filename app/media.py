@@ -400,8 +400,13 @@ def _open_image(path, kind, max_side=None):
                 else:
                     im = Image.fromarray(th.data)
             except Exception:
-                im = Image.fromarray(raw.postprocess(half_size=True, use_camera_wb=True))
+                im = None
             size = (raw.sizes.width, raw.sizes.height)
+            # Eingebettete Vorschau zu klein (z. B. Lightroom-Smart-Preview-DNG: 1024 px bei 2540 px Bild)?
+            # Dann selbst entwickeln – Vorschau/Export immer in voller Größe.
+            need = min(max_side or max(size), max(size))
+            if im is None or max(im.size) < need * 0.9:
+                im = Image.fromarray(raw.postprocess(half_size=max(size) // 2 >= need, use_camera_wb=True))
         im = _fast_reduce(im, max_side)
         orient = (exif.get(0x0112) if exif else 1) or 1
         if orient in (5, 6, 7, 8):

@@ -378,22 +378,34 @@ async function rotateInEditor(cw) {
   queueRender(true);
 }
 
-// Automatisch: Schwarz-/Weißpunkt auf 0,5 %/99,5 % der Helligkeiten, Mitte auf ~42 %, etwas Dynamik
+// Automatisch (edit.auto in Python identisch): Schwarz-/Weißpunkt behutsam (höchstens ±60, Weiß ohne Abschneiden),
+// Mitte zur Hälfte Richtung ~42 %, aber die hellsten 1 % bleiben unter 95 %; etwas Dynamik
 function autoEdit() {
   const c = document.createElement("canvas"), s = Math.min(1, 256 / Math.max(ed.img.naturalWidth, ed.img.naturalHeight));
   c.width = Math.max(1, Math.round(ed.img.naturalWidth * s)); c.height = Math.max(1, Math.round(ed.img.naturalHeight * s));
   const ctx = c.getContext("2d");
   ctx.drawImage(ed.img, 0, 0, c.width, c.height);
-  const d = ctx.getImageData(0, 0, c.width, c.height).data, lum = [];
-  for (let i = 0; i < d.length; i += 4) lum.push((0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255);
+  const d = ctx.getImageData(0, 0, c.width, c.height).data, lum = [], mx = [];
+  for (let i = 0; i < d.length; i += 4) {
+    lum.push((0.2126 * d[i] + 0.7152 * d[i + 1] + 0.0722 * d[i + 2]) / 255);
+    mx.push(Math.max(d[i], d[i + 1], d[i + 2]) / 255);  // hellster Farbkanal: Haut brennt im Rot zuerst aus
+  }
   lum.sort((a, b) => a - b);
-  const q = p => lum[Math.min(lum.length - 1, Math.floor(p * lum.length))];
-  const lo = q(0.005), hi = q(0.995), med = q(0.5), clamp = v => Math.round(Math.max(-100, Math.min(100, v)));
-  const blacks = clamp(-lo / 0.15 * 100), whites = clamp((1 - hi) / 0.15 * 100);
-  const bp = -blacks / 100 * 0.15, wp = 1 - whites / 100 * 0.15, m2 = (med - bp) / Math.max(1e-3, wp - bp);
-  const exposure = clamp(Math.log2(0.42 / Math.max(0.02, m2)) * 50 * 0.8);
-  Object.assign(ed.e, { blacks, whites, exposure: Math.max(-60, Math.min(60, exposure)), vibrance: Math.max(ed.e.vibrance || 0, 15) });
+  mx.sort((a, b) => a - b);
+  Object.assign(ed.e, autoValues(lum, mx, ed.e.vibrance));
   for (const k of ["blacks", "whites", "exposure"]) if (!ed.e[k]) delete ed.e[k];
+}
+function autoValues(lum, mx, vib) {  // lum/mx = sortierte Helligkeiten bzw. hellste Kanäle 0..1
+  const q = (p, v = lum) => v[Math.min(v.length - 1, Math.floor(p * v.length))];
+  const clamp = (v, m) => Math.round(Math.max(-m, Math.min(m, v)));
+  const lo = q(0.005), hi = q(0.999, mx), med = q(0.5), h99 = q(0.99, mx);
+  const blacks = clamp(-lo / 0.15 * 100, 60);
+  const whites = Math.max(0, clamp((1 - hi / 0.98) / 0.15 * 100, 60));  // hellste Stelle auf 98 %, nichts abschneiden
+  const bp = -blacks / 100 * 0.15, wp = 1 - whites / 100 * 0.15, span = Math.max(1e-3, wp - bp);
+  const m2 = (med - bp) / span, t99 = (h99 - bp) / span;
+  let f = Math.pow(0.42 / Math.max(0.02, m2), 0.5);
+  if (f > 1) f = Math.max(1, Math.min(f, 0.95 / Math.max(1e-3, t99)));  // hellste 1 % unter 95 %
+  return { blacks, whites, exposure: clamp(Math.log2(f) * 50, 60), vibrance: Math.max(vib || 0, 15) };
 }
 
 async function saveEditor() {

@@ -11,7 +11,7 @@ if not exist "%RT%\ok" (
   if exist "%RT%" rmdir /s /q "%RT%"
   mkdir "%RT%"
   "%SystemRoot%\System32\tar.exe" -xzf "%HERE%runtime\python-win-x64.tar.gz" -C "%RT%" || goto fail
-  "%PY%" -m pip install --no-index --no-warn-script-location --disable-pip-version-check -q --find-links "%HERE%runtime\wheels-win-x64" pillow pillow-heif numpy opencv-python-headless rawpy av icloudpd samsungtvws segno || goto fail
+  "%PY%" -m pip install --no-index --no-warn-script-location --disable-pip-version-check -q --find-links "%HERE%runtime\wheels-win-x64" pillow pillow-heif numpy opencv-python-headless rawpy av icloudpd samsungtvws segno onnxruntime || goto fail
   echo ok>"%RT%\ok"
 )
 "%PY%" "%HERE%app\server.py" %*

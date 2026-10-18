@@ -98,13 +98,15 @@ body.filters-open #layout { top: calc(var(--top) + 56px); }
 .gridhead .count { color: var(--muted); }
 .gridhead .zoom { margin-left: auto; display: flex; gap: 4px; }
 .gridhead .zoom button { padding: 3px 9px; }
-.vgrid { position: relative; margin: 0 18px; }
+.vgrid { position: relative; margin: 0 18px; user-select: none; -webkit-user-select: none; }
 .vgrid .h { position: absolute; left: 4px; font-weight: 600; font-size: 15px; display: flex; align-items: flex-end; padding-bottom: 6px; }
 .vgrid .h small { color: var(--muted); font-weight: normal; margin-left: 8px; }
 .cell { position: absolute; padding: 2px; cursor: pointer; }
 .cell img { width: 100%; height: 100%; object-fit: cover; display: block; background: #1d2023; border-radius: 3px; }
 .cell:hover img { filter: brightness(1.12); }
-.cell .vid { position: absolute; right: 8px; bottom: 6px; font-size: 12px; background: rgba(0,0,0,.6); border-radius: 4px; padding: 0 5px; }
+.cell .vid { position: absolute; right: 8px; bottom: 6px; font-size: 12px; background: rgba(0,0,0,.6); border-radius: 4px; padding: 0 5px;
+  color: #fff; font-variant-numeric: tabular-nums; }
+.cell .vid.live { background: rgba(0,0,0,.4); color: #ffd84d; }
 
 /* Kalender (Jahre × Monate) */
 .cal { display: grid; grid-template-columns: 56px repeat(12, 1fr); gap: 3px; }
@@ -117,11 +119,15 @@ body.filters-open #layout { top: calc(var(--top) + 56px); }
   background: linear-gradient(transparent, rgba(0,0,0,.8)); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 .cal .mo .n { position: absolute; left: 6px; top: 5px; font-size: 11px; opacity: 0; text-shadow: 0 1px 3px #000; }
 .cal .mo:hover .n { opacity: .9; }
+.cal .mo .ev .evl { cursor: pointer; }
+.cal .mo .ev .evl:hover { text-decoration: underline; color: #f0c674; }
 .cal .mo.empty { cursor: default; background: #141619; }
 .cal .mo.empty { border: 1px solid #1d2024; }
 .cal .mo.empty .m { color: #4a4f55; text-shadow: none; font-size: 12px; left: 7px; right: auto; }
 .vgrid .h .evs { margin-left: 12px; font-weight: 500; font-size: 13px; color: #f0c674; }
 .vgrid .h .evs a { color: #f0c674; }
+.vgrid .h.evh > a { color: #f0c674; text-decoration: none; }
+.vgrid .h.evh > a:hover { text-decoration: underline; }
 .tag { display: inline-block; background: var(--panel2); border-radius: 6px; padding: 1px 7px; margin: 0 4px 4px 0; color: var(--text); }
 .folder .ev { color: #f0c674; }
 

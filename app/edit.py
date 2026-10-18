@@ -55,6 +55,38 @@ def is_active(e):
     return bool(e) and any(e.get(k) for k in SLIDERS + ("angle", "flip", "crop"))
 
 
+def auto(im, e=None):
+    """✨ Auto wie im Editor (editor.js autoValues – gleiche Formel): Schwarz-/Weißpunkt behutsam (höchstens ±60),
+    Mitte zur Hälfte Richtung ~42 %, hellste 1 % unter 95 %, Weiß ohne Abschneiden; etwas Dynamik.
+    im = unbearbeitetes Foto; übrige Einstellungen bleiben. (17.10.: vorher volle Korrektur → dunkle Fotos überstrahlt)"""
+    import numpy as np
+
+    sm = im.convert("RGB")
+    sm.thumbnail((256, 256), Image.BILINEAR)
+    a = np.asarray(sm, dtype=np.float64)
+    lum = np.sort(((0.2126 * a[..., 0] + 0.7152 * a[..., 1] + 0.0722 * a[..., 2]) / 255).ravel())
+    mx = np.sort((a.max(axis=2) / 255).ravel())  # hellster Farbkanal: Haut brennt im Rot zuerst aus
+
+    def q(p, v=lum):
+        return v[min(len(v) - 1, int(p * len(v)))]
+
+    def clamp(v, m):
+        return round(max(-m, min(m, v)))
+    lo, hi, med, h99 = q(0.005), q(0.999, mx), q(0.5), q(0.99, mx)
+    blacks = clamp(-lo / 0.15 * 100, 60)
+    whites = max(0, clamp((1 - hi / 0.98) / 0.15 * 100, 60))  # hellste Stelle auf 98 %, nichts abschneiden
+    bp, wp = -blacks / 100 * 0.15, 1 - whites / 100 * 0.15
+    span = max(1e-3, wp - bp)
+    m2, t99 = (med - bp) / span, (h99 - bp) / span
+    f = (0.42 / max(0.02, m2)) ** 0.5
+    if f > 1:  # aufhellen nur, solange die hellsten 1 % unter 95 % bleiben
+        f = max(1.0, min(f, 0.95 / max(1e-3, t99)))
+    out = dict(e or {})
+    out.update(blacks=blacks, whites=whites, exposure=clamp(math.log2(f) * 50, 60),
+               vibrance=max(out.get("vibrance") or 0, 15))
+    return clean(out)
+
+
 def zoom_for_angle(w, h, deg):
     """Vergrößerung, damit das gedrehte Bild die ganze Fläche ohne leere Ecken füllt."""
     t = math.radians(abs(deg))

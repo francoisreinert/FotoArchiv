@@ -31,6 +31,9 @@ FUNKTIONEN
                Fotos pro Jahr (Klick auf ein Jahr springt dorthin), häufigste Personen und Orte
   Fotos        Zeitleiste aller Fotos und Videos, nach Monaten gruppiert, Jahre links zum Springen
   Kalender     Jahre x Monate, mit Ereignisnamen (z. B. "Sommerurlaub 2024")
+               Klick auf einen Monat zeigt den ganzen Monat (‹ › blättert); Fotos eines Ereignisses stehen
+               darin als eigener Abschnitt mit dessen Namen. Klick auf den Ereignisnamen in der Kachel
+               zeigt nur das Ereignis (vom ersten bis zum letzten Foto). Überall gilt: älteste Fotos zuerst (Filter › Sortierung).
   Alben &      Eigene Alben (auch Unteralben) und Ereignisse. Ereignisse sind Zeiträume: neue Fotos aus
   Ereignisse   diesem Zeitraum gehören automatisch dazu.
   Suche        Freitext: Ordnernamen, Dateinamen, Jahr, Monat ("Juli 2019"), Jahreszeit ("Sommer"),
@@ -84,7 +87,28 @@ FOTOS BEARBEITEN UND ORDNEN
   Strg+A = alle). Oben erscheint eine Leiste: Favorit, + Album, + Ereignis, + Person, + Stichwort,
   "Mehr …": drehen, Datum ändern, Person/Stichwort entfernen, aus Album entfernen, Titelbild,
   ausblenden. Ausgeblendete Fotos: Alben & Ereignisse › Ausgeblendete Fotos.
+  Beiseite: "Mehr …" › "Aus der Zeitleiste nehmen" nimmt Fotos aus Fotos/Zeitleiste und Kalender, sie bleiben
+  aber in Alben, Ordnern, bei Personen und in der Suche (anders als Ausblenden, das sie überall versteckt).
+  Seitenleiste › Beiseite zeigt sie mit eigener Zeitleiste (Jahr wählen) und eigenem Kalender. Ganze Ordner:
+  im Ordner "Nicht in der Zeitleiste" – gilt auch für alles, was später dort dazukommt.
   Alle Änderungen stehen nur im Katalog – die Bilddateien selbst werden nie verändert.
+
+BILDINHALT (Suche nach dem, was zu sehen ist – und heikle Fotos)
+  Seitenleiste › Bildinhalt. Beim ersten Mal "Einrichten": lädt einmalig Modelle (~620 MB), danach prüft
+  FotoArchiv im Hintergrund jedes Foto und Video (Vorschaubild) – komplett auf diesem Rechner, kein Foto
+  verlässt ihn. Für ~200.000 Fotos rund 3 Stunden; Neues wird nach dem Einlesen automatisch geprüft.
+  Suche: frei auf Deutsch (oder anderen Sprachen) beschreiben, z. B. "Fußball", "Kinder am Strand",
+  "roter Traktor"; mehrere Begriffe mit Komma = einer davon. Sortiert nach Ähnlichkeit, "beste 100 … 3000"
+  bestimmt, wie viele gezeigt werden. "Alle in neues Album …" legt die Treffer (oder nur die markierten) als
+  Album an; einzelne Fotos wie gewohnt markieren und "+ Album", "+ Ereignis", "Mehr …" › privat usw.
+  Heikel: "Nackt" und "Knapp bekleidet" (Bikini, Badeanzug, Unterwäsche) – erkannt, aber nichts passiert von
+  allein. Fotos markieren und "🔒 Privat" (nie auf Fernseher, iCloud-Uploads, Web-Freigaben) oder
+  "Nicht heikel" (Fehltreffer, taucht nicht mehr auf; unter "Nicht heikel" wieder zurückholen). Schon private
+  Fotos sind ausgeblendet ("auch schon private zeigen (Anzahl)"). Duplikat-Kopien folgen der Entscheidung zum Hauptfoto.
+  "Nackt"/"Knapp bekleidet" sind Vorschläge. "✓ Bestätigen" (oder "→ Knapp/Bikini" bzw. "→ Nackt") macht sie
+  zu deiner Entscheidung (Reiter "Bestätigt"). Nur bestätigte Fotos: Schalter "👁/👙" oben blendet sie aus
+  Zeitleiste und Kalender aus (Alben, Ordner, Suche zeigen sie weiter), und sie erscheinen nie auf dem
+  Fernseher (DLNA, Diashow, Frame).
 
 FOTOS BEARBEITEN (Zuschneiden, Licht, Farbe)
   Im Betrachter "✎ Bearbeiten" (Taste E): Zuschneiden (frei oder 1:1, 4:3, 3:2, 16:9, Original; ⇄ = hoch/quer,
@@ -94,6 +118,10 @@ FOTOS BEARBEITEN (Zuschneiden, Licht, Farbe)
   Die Originaldatei bleibt unverändert: die Bearbeitung steht im Katalog und gilt überall (Raster, Diashow,
   Fernseher, Handy, Teilen/Export). "Original" im Editor macht alles rückgängig. Eine bearbeitete Datei
   bekommt man über "Teilen …" (JPEG); "Originale" exportiert weiterhin die unveränderte Datei.
+  Mehrere Fotos auf einmal: markieren (z. B. im Album "Alle auswählen" bzw. Strg+A), dann "Mehr …" ›
+  "✨ Auto verbessern" (jedes Foto bekommt seine eigene Auto-Einstellung), "Bearbeitung kopieren" (ein Foto) und
+  "Bearbeitung einfügen" (Licht/Farbe auf die markierten übertragen, ohne Zuschnitt) oder "Bearbeitung
+  zurücksetzen (Original)". Die Originaldateien bleiben immer unverändert.
 
 VIDEOSCHNITT
   Clips sammeln: 🎬+ oben rechts auf jedem Foto/Video (bzw. "🎬 + Video" im Betrachter) legt es ins zuletzt
@@ -222,6 +250,8 @@ SICHERUNG AUF S3 (Amazon S3 oder eigener S3-Speicher wie StorageGRID, MinIO …)
   Die Schlüssel liegen nur in FotoArchiv/data/backup.json (wird nie weitergegeben).
   "☁ Sicherung starten": alle Fotos, Videos und Begleitdateien mit gleicher Ordnerstruktur (ohne
   FotoArchiv lesbar) plus Katalog (Alben, Personen, Bearbeitungen; Tageskopien der letzten 10 Läufe).
+  Dazu das Programm selbst unter FotoArchiv-Katalog/Programm/ (Programmcode, Modelle, Bildinhalt-Daten;
+  Tageskopie des Codes als ZIP) – nach einem Plattenausfall lässt sich FotoArchiv von dort neu aufsetzen.
   Nur Neues/Geändertes wird hochgeladen, große Dateien in Teilen. Läuft im Hintergrund, "Anhalten" geht
   jederzeit; wird FotoArchiv beendet, geht es beim nächsten Start an derselben Stelle weiter.
   Optional: Tempo begrenzen, automatisch alle 6 h / täglich / wöchentlich, Speicherklasse (Amazon:
@@ -278,6 +308,10 @@ FERNSEHER & SAMSUNG THE FRAME
      Verbundene Geräte). Ereignisse, Alben, Jahre/Monate, Ordner, Personen, Favoriten (alt → neu); ← → blättert,
      ▶ startet die Diashow des Fernsehers. Private und ausgeblendete Fotos erscheinen dort nie.
      Geht nur, solange FotoArchiv am PC läuft.
+  Von anderen Geräten bedienen: Einstellungen › Bibliothek › "Im Heimnetz bedienen" – Passwort festlegen
+     (mind. 6 Zeichen), Haken setzen. Andere PCs, Tablets, Handys im selben Netz öffnen die angezeigte Adresse
+     (z. B. http://192.168.x.x:8775) und melden sich mit dem Passwort an (30 Tage gemerkt). Aus dem Internet
+     nicht erreichbar. Beenden, Fotoordner wechseln und diese Einstellung gehen nur am Rechner selbst.
 
 NEUE FOTOS HINZUFÜGEN (Menü "Import")
   Eingangsordner (am einfachsten): Fotos/Videos in den Ordner FotoArchiv-Eingang auf der Platte

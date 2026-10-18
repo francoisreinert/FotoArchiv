@@ -9,7 +9,8 @@ BASE = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 RT = os.path.join(BASE, "runtime")
 MODELS = os.path.join(BASE, "models")
 PYVER = "3.12"
-PACKAGES = ["pillow", "pillow-heif", "numpy", "opencv-python-headless==4.10.0.84", "rawpy", "av"]
+PACKAGES = ["pillow", "pillow-heif", "numpy", "opencv-python-headless==4.10.0.84", "rawpy", "av",
+            "onnxruntime"]  # onnxruntime: Bildinhalt (content.py); Mac x64 bekommt ältere Fassung (1.23)
 # icloudpd: immer das reine Python-Paket (das Windows-Paket enthält nur ein fertiges Programm ohne Bibliothek)
 ICLOUDPD = "icloudpd==1.32.3"
 # Samsung The Frame (Kunstmodus) und QR-Codes fürs Teilen aufs Handy

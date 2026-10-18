@@ -322,7 +322,9 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
                          ("trashed", "TEXT"), ("trash_from", "TEXT"), ("trash_side", "TEXT"),
                          ("edit", "TEXT"), ("doc_lines", "INTEGER"), ("doc_area", "REAL"), ("doc_no", "INTEGER DEFAULT 0"),
                          ("ev_bias", "REAL"), ("exp_mode", "INTEGER"), ("stack", "INTEGER"), ("stack_top", "INTEGER"),
-                         ("doc_state", "INTEGER"), ("pano", "TEXT"), ("ocr", "TEXT"), ("ocr_ver", "INTEGER")):
+                         ("doc_state", "INTEGER"), ("pano", "TEXT"), ("ocr", "TEXT"), ("ocr_ver", "INTEGER"),
+                         ("live", "INTEGER"), ("nude", "INTEGER"), ("nude_score", "REAL"),
+                         ("nude_fix", "INTEGER")):
             if col not in cols:
                 con.execute("ALTER TABLE items ADD COLUMN %s %s" % (col, typ))
         # Abdeckende Indizes: Übersicht, Kalender und Ordner lesen nur den Index statt jede Zeile
@@ -347,6 +349,14 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
             con.execute("ALTER TABLE albums ADD COLUMN kind TEXT")
             con.execute("UPDATE albums SET kind='doc' WHERE name='Dokumente' AND parent IS NULL")
         con.execute("CREATE INDEX IF NOT EXISTS items_docset ON items(id) WHERE hidden = 4 OR doc_state = 1")
+        # „Beiseite“ (aside.py): eigene Zeitleiste/Kalender
+        con.execute("CREATE INDEX IF NOT EXISTS items_aside ON items(taken, id) WHERE hidden = 5")
+        # Videos: Länge + Live Photo (livephotos.py) für die Kacheln, ohne jede Zeile zu lesen
+        con.execute("CREATE INDEX IF NOT EXISTS items_vid ON items(id, live, duration) WHERE kind = 'video'")
+        # Heikel (content.py): nur die wenigen Treffer im Index
+        con.execute("CREATE INDEX IF NOT EXISTS items_nude ON items(nude, taken, id) WHERE nude <> 0")
+        # nude_fix = 1: Stufe vom Nutzer gesetzt (nicht heikel / knapp / nackt) – Erkennung ändert sie nicht mehr
+        con.execute("UPDATE items SET nude_fix = 1 WHERE nude <> 0 AND nude = -1 AND nude_fix IS NULL")
         if "private" not in {r[1] for r in con.execute("PRAGMA table_info(events)")}:
             con.execute("ALTER TABLE events ADD COLUMN private INTEGER DEFAULT 0")
         # selbst gewählte Titelbilder: kind = folder (Pfad) | month (JJJJ-MM) | event (id); Alben: albums.cover,

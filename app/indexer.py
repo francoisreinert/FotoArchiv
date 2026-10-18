@@ -211,11 +211,17 @@ def process_pending(con, workers):
     persons = {name.lower(): pid for pid, name in con.execute("SELECT id, name FROM persons")}
     mylio = load_mylio().get("media", {})
     # Wie viele Dateien teilen sich einen Namen (z. B. IMG_1234.CR2 + IMG_1234.JPG)?
-    stems = {}
-    for (p,) in con.execute("SELECT path FROM items"):
+    stems, files = {}, {}
+    for p, t in con.execute("SELECT path, taken FROM items"):
         k = mylio_key(p)
         stems[k] = stems.get(k, 0) + 1
-    tasks = ({"id": i, "path": to_abs(p), "kind": k, "faces": True, "mylio": mylio.get(mylio_key(p)),
+        files.setdefault(k, []).append(t)
+    alias = mylio_aliases(files, mylio, mylio)
+
+    def my_key(p):
+        k = mylio_key(p)
+        return alias.get(k, k)
+    tasks = ({"id": i, "path": to_abs(p), "kind": k, "faces": True, "mylio": mylio.get(my_key(p)),
               "shared": stems.get(mylio_key(p), 1) > 1, "userrot": r or 0}
              for i, p, k, r in todo)
     ctx = mp.get_context("spawn")
@@ -373,20 +379,56 @@ def mylio_key(rel):
     return common.norm(folder + "/" + name.rsplit(".", 1)[0].lower())
 
 
+_MYLIO_SUFFIX = re.compile(r"^(.*)-(\d{1,2})$")
+
+
+def mylio_aliases(files, known, media, loose=False):
+    """Mylio führt Dateien, die es beim Ablegen umbenannt hat, unter dem alten Namen: auf der Platte
+    IMG_7754-1.CR2, in Mylio „IMG_7754“. files = {Datei-Schlüssel: [Aufnahmedatum, …]}, known = Mylio-Schlüssel.
+    Liefert {Datei-Schlüssel: Mylio-Schlüssel} für Dateien „<Name>-<n>“, wenn es „<Name>“ nur in Mylio gibt.
+    Zuordnung nur, wenn das Kameradatum aus Mylio passt (±2 min); loose: einzige Variante auch ohne Datum (Alben)."""
+    groups = {}
+    for k in files:
+        if k in known:
+            continue
+        m = _MYLIO_SUFFIX.match(k)
+        if m and m.group(1) in known and m.group(1) not in files:
+            groups.setdefault(m.group(1), []).append(k)
+    out = {}
+    for base, ks in groups.items():
+        cam = (media.get(base) or {}).get("d")
+        hit = [k for k in ks if cam and any(t and _secs(t, cam) <= 120 for t in files[k])]
+        if not hit and loose and len(ks) == 1:
+            hit = ks
+        for k in hit:
+            out[k] = base
+    return out
+
+
 def import_mylio(con):
     """Ereignisse, Alben, Bewertungen und Beschriftungen aus Mylio übernehmen."""
     data = load_mylio()
     if not data:
         return
     PROGRESS.set_phase("Mylio-Daten übernehmen")
-    by_key = {}
-    for iid, path in con.execute("SELECT id, path FROM items"):
-        by_key.setdefault(mylio_key(path), []).append(iid)
+    by_key, files = {}, {}
+    for iid, path, taken in con.execute("SELECT id, path, taken FROM items"):
+        k = mylio_key(path)
+        by_key.setdefault(k, []).append(iid)
+        files.setdefault(k, []).append(taken)
+    # Von Mylio umbenannte Dateien (IMG_7754-1.CR2 = Mylio „IMG_7754“) unter dem Mylio-Namen mitführen
+    media = {common.norm(k): v for k, v in data.get("media", {}).items()}
+    known = set(media) | {common.norm(k) for a in data.get("albums", []) for k in a["items"]}
+    alb_key = dict(by_key)
+    for k, base in mylio_aliases(files, known, media, loose=True).items():
+        alb_key[base] = alb_key.get(base, []) + by_key[k]
+    for k, base in mylio_aliases(files, known, media).items():
+        by_key[base] = by_key.get(base, []) + by_key[k]
     stamp = data.get("exported")
     done = con.execute("SELECT value FROM meta WHERE key='mylio_import'").fetchone()
     if done and done[0] == stamp:
         # Schon übernommen: nur neue Dateien in bestehende Mylio-Alben eintragen
-        _mylio_album_items(con, data, by_key, refresh_only=True)
+        _mylio_album_items(con, data, alb_key, refresh_only=True)
         _mylio_media_fields(con, data, by_key, with_fav=False)
         return
     # Ereignisse/Alben nur ergänzen, nie löschen oder überschreiben (Benutzer kann sie bearbeitet haben)
@@ -396,7 +438,7 @@ def import_mylio(con):
     con.executemany("INSERT INTO events(name, start, end, source) VALUES(?,?,?,'mylio')",
                     [(e["name"], e["start"], e["end"]) for e in data.get("events", [])
                      if e["name"] not in known_events and "e:" + e["name"] not in deleted])
-    _mylio_album_items(con, data, by_key, refresh_only=False, deleted=deleted)
+    _mylio_album_items(con, data, alb_key, refresh_only=False, deleted=deleted)
     con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('mylio_import', ?)", (stamp,))
     _mylio_media_fields(con, data, by_key, with_fav=True)
 
@@ -583,6 +625,48 @@ def _similar(con, cache, a, b, limit):
     return s is None or s <= limit  # ohne Vorschaubild wie bisher
 
 
+def smaller_copies(con, items, dups, never, similar):
+    """Verkleinerte Kopien (Exporte, Mylio-/Lightroom-Vorschauen, iCloud-Kopien) eines größeren Fotos:
+    gleiche Aufnahmesekunde, gleiches Seitenverhältnis (±2 %, kein Ausschnitt), lange Seite ≤ 85 %, dhash ≤ 6 und
+    gleiche Bildstruktur (similar). Nicht: RAW+JPEG-Paar (gleicher Name im Ordner), Belichtungsreihe, „Kein Duplikat“.
+    items = {id: (taken, kind, w, h, phash, stack, name, folder, ext)}; dups = [(behalten, kopie)] aus dem 1. Durchgang.
+    Liefert zusätzliche Paare (größtes Foto, kleinere Kopie); Kopien der kleineren Kopie wandern mit."""
+    copies = {c for _, c in dups}
+    by_sec = {}
+    for iid, it in items.items():
+        if iid not in copies and it[1] in ("photo", "raw") and it[0] and it[2] and it[3] and taken_src_ok(it[0]):
+            by_sec.setdefault(it[0], []).append(iid)
+    root, out = {}, []
+    for ids in by_sec.values():
+        if len(ids) < 2:
+            continue
+        ids.sort(key=lambda i: -(items[i][2] * items[i][3]))
+        for n, s in enumerate(ids):
+            if s in never:
+                continue
+            ts, ks, ws, hs, ps, sts, names, fs, es = items[s]
+            for b in ids[:n]:
+                tb, kb, wb, hb, pb, stb, nameb, fb, eb = items[b]
+                if max(ws, hs) > 0.85 * max(wb, hb) or ps is None or pb is None:
+                    continue
+                if abs(min(ws, hs) / max(ws, hs) - min(wb, hb) / max(wb, hb)) > 0.02:
+                    continue  # anderes Seitenverhältnis = Ausschnitt
+                if (sts is not None and sts == stb) or (fs == fb and names[:-(len(es) + 1)].lower() ==
+                                                        nameb[:-(len(eb) + 1)].lower()):
+                    continue
+                if bin((ps ^ pb) & 0xFFFFFFFFFFFFFFFF).count("1") > 6:
+                    continue
+                s1, s2 = _shot(names), _shot(nameb)
+                other_number = bool(s1 and s2 and s1[0] == s2[0] and s1 != s2)
+                if not similar(s, b, SIM_SAME_NAME_OTHER_NUMBER if other_number else SIM_OTHER_NAME):
+                    continue
+                root[s] = root.get(b, b)
+                out.append((root[s], s))
+                break
+    # Kopien (1. Durchgang) einer kleineren Kopie hängen jetzt am größten Foto
+    return out + [(root[k], c) for k, c in dups if k in root]
+
+
 def mark_duplicates(con):
     """Doppelte Fotos (gleiche Aufnahmezeit, Größe und praktisch gleicher Bildinhalt)
     sowie RAW+JPEG-Paare. Behalten wird jeweils die größte Datei.
@@ -625,6 +709,13 @@ def mark_duplicates(con):
                     break
             else:
                 keep.append((size, iid, ph, st, ev, name))
+    items = {r[0]: r[1:] for r in con.execute(
+        "SELECT id, taken, kind, width, height, phash, stack, name, folder, ext FROM items WHERE COALESCE(hidden,0) != 2")}
+    extra = smaller_copies(con, items, dups, never, lambda a, b, lim: _similar(con, cache, a, b, lim) and
+                           cache.get((min(a, b), max(a, b))) is not None)
+    if extra:
+        moved = {c for _, c in extra}
+        dups = [d for d in dups if d[1] not in moved] + extra
     con.execute("UPDATE items SET dup_of=NULL, raw_of=NULL")
     con.executemany("UPDATE items SET dup_of=? WHERE id=?", dups)
     con.executemany("UPDATE items SET raw_of=? WHERE id=?", [(photos[s], i) for s, i in raws if s in photos])
@@ -781,6 +872,25 @@ def run(full_faces=False):
         con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES('index_complete', '1')")
         con.commit()
         PROGRESS.message = "Fertig"
+        try:
+            import aside
+
+            aside.apply(con)  # Ordner-Regeln „nicht in der Zeitleiste“ für Neues
+        except Exception:
+            pass
+        try:
+            import livephotos
+
+            livephotos.start()  # neue Videos: Live Photo?
+        except Exception:
+            pass
+        try:
+            import content
+
+            if common.load_config().get("content") and content.available():
+                content.scan()  # Bildinhalt/Heikel für Neues
+        except Exception:
+            pass
         try:
             import docs
 

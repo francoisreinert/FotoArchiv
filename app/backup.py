@@ -4,7 +4,8 @@
   an die Oberfläche.
 - Gesichert werden alle Dateien der eingelesenen Ordner (auch XMP/AAE-Begleitdateien) mit gleicher Ordnerstruktur:
   <Präfix><Pfad relativ zur Bibliothek>. Ohne FotoArchiv lesbar. Dazu FotoArchiv-Katalog/ (Katalog-Kopie,
-  config.json, mylio.json; Tageskopien der letzten 10 Läufe).
+  config.json, mylio.json; Tageskopien der letzten 10 Läufe) und FotoArchiv-Katalog/Programm/ (Programmordner ohne
+  Laufzeit: Code, CLAUDE.md, Modelle; content.db; Tages-ZIP des Codes).
 - Inkrementell: Tabelle backup_files merkt Größe+Änderungszeit je Ziel; zu Beginn wird mit der Liste im Bucket
   abgeglichen (z. B. neuer Rechner/Katalog). Gelöschte Dateien bleiben in der Sicherung (Schutz vor Versehen).
 - Große Dateien in Teilen (Multipart); Teile stehen in backup_mp, ein abgebrochener Upload läuft nach Neustart
@@ -450,12 +451,91 @@ def _upload_catalog(c, t, pfx, cfg):
         old = sorted(k for k, *_ in (x for x in c.list(pfx + CAT_DIR + "Tageskopien/") if x[0] != "prefix"))
         for k in old[:-KEEP_CATALOGS]:  # nur eigene Tageskopien aufräumen
             c.delete(k)
+        _upload_program(c, t, pfx, con, lim, day)
     finally:
         con.close()
         try:
             os.remove(snap)
         except OSError:
             pass
+
+
+# Programm selbst (ohne Laufzeit – die liefert das Paket neu): Einzeldateien nur bei Änderung, dazu Tages-ZIP des Codes
+PROG_DIRS = ("app", "tools", "models", "Musik")
+PROG_ZIP_DIRS = ("app", "tools")  # Tageskopie: nur Code (Modelle ändern sich nicht)
+PROG_SKIP = {"__pycache__", ".git"}
+
+
+def _program_files():
+    base = common.BASE_DIR
+    out = []
+    for name in sorted(os.listdir(base)):
+        full = os.path.join(base, name)
+        if os.path.isfile(full) and not name.startswith("."):
+            out.append((name, full))
+    for d in PROG_DIRS:
+        for dp, dn, fn in os.walk(os.path.join(base, d)):
+            dn[:] = sorted(x for x in dn if x not in PROG_SKIP)
+            for f in sorted(fn):
+                if f.endswith((".pyc", ".tmp", ".part")):
+                    continue
+                full = os.path.join(dp, f)
+                out.append((os.path.relpath(full, base).replace(os.sep, "/"), full))
+    return out
+
+
+def _upload_program(c, t, pfx, con, lim, day):
+    """FotoArchiv-Programmordner + content.db (Bildinhalt) nach FotoArchiv-Katalog/Programm/."""
+    import zipfile
+
+    JOB.phase = "Programm sichern"
+    mk = "prog_backup_" + t["id"]
+    seen = json.loads((con.execute("SELECT value FROM meta WHERE key=?", (mk,)).fetchone() or ["{}"])[0])
+    dest = pfx + CAT_DIR + "Programm/"
+    files = _program_files()
+    snap = None
+    cdb = os.path.join(DATA_DIR, "content.db")
+    if os.path.exists(cdb):  # konsistente Kopie wie beim Katalog; Änderung an .db oder -wal erkennen
+        sig = [os.path.getsize(cdb)] + [os.path.getmtime(p) for p in (cdb, cdb + "-wal") if os.path.exists(p)]
+        if seen.get("data/content.db") != sig:
+            snap = os.path.join(DATA_DIR, "content-sicherung.tmp")
+            src = sqlite3.connect(cdb, timeout=60)
+            dst = sqlite3.connect(snap)
+            src.backup(dst)
+            dst.close()
+            src.close()
+            st = os.stat(snap)
+            _upload_file(c, t, t["id"], dest + "data/content.db", CAT_DIR + "Programm/data/content.db", snap,
+                         st.st_size, st.st_mtime, lim, con)
+            seen["data/content.db"] = sig
+    try:
+        for rel, full in files:
+            st = os.stat(full)
+            sig = [st.st_size, round(st.st_mtime, 3)]
+            if seen.get(rel) == sig:
+                continue
+            _upload_file(c, t, t["id"], dest + rel, CAT_DIR + "Programm/" + rel, full, st.st_size, st.st_mtime, lim, con)
+            seen[rel] = sig
+        zp = os.path.join(DATA_DIR, "programm-sicherung.tmp")
+        with zipfile.ZipFile(zp, "w", zipfile.ZIP_DEFLATED) as z:
+            for rel, full in files:
+                if "/" not in rel or rel.split("/", 1)[0] in PROG_ZIP_DIRS:
+                    z.write(full, rel)
+        st = os.stat(zp)
+        _upload_file(c, t, t["id"], dest + "Tageskopien/programm-%s.zip" % day,
+                     CAT_DIR + "Programm/Tageskopien/programm-%s.zip" % day, zp, st.st_size, st.st_mtime, lim, con)
+        os.remove(zp)
+        old = sorted(k for k, *_ in (x for x in c.list(dest + "Tageskopien/") if x[0] != "prefix"))
+        for k in old[:-KEEP_CATALOGS]:
+            c.delete(k)
+    finally:
+        con.execute("INSERT OR REPLACE INTO meta(key, value) VALUES(?, ?)", (mk, json.dumps(seen)))
+        con.commit()
+        if snap:
+            try:
+                os.remove(snap)
+            except OSError:
+                pass
 
 
 def run_backup():

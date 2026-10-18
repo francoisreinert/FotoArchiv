@@ -18,7 +18,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
 
 import common  # noqa: E402
+import aside  # noqa: E402
 import privacy  # noqa: E402
+import remote  # noqa: E402
 from common import FACE_KEY_OFFSET, PREVIEWS, THUMBS, connect, to_abs  # noqa: E402
 
 PORT = 8765
@@ -107,7 +109,10 @@ def build_where(p):
     # hidden = 3: Foto einer Belichtungsreihe hinter ihrem Titelbild (stacks.py) – aufgeklappt, in Alben, bei Personen
     # und in der Suche mit anzeigen, sonst zugeklappt
     # hidden = 4: als Dokument einsortiert (docs.py) – nicht in Zeitleiste/Kalender, aber in Alben, Ordnern, Suche
+    # hidden = 5: beiseitegelegt (aside.py) – ebenso, mit eigener Zeitleiste (aside=1)
     hv = {"1": 1, "2": 2}.get(p.get("hidden"), 0)
+    if p.get("aside") == "1":
+        hv = 5
     docs_view = p.get("docs")
     if docs_view and p.get("q"):  # Suche auf der Dokumente-Seite: in allen Dokumenten (auch erkannter Text)
         docs_view = "alle"
@@ -121,10 +126,16 @@ def build_where(p):
         vis = {0}
         if p.get("stacks") == "open" or p.get("album") or p.get("persons") or p.get("q"):
             vis.add(3)
-        if p.get("album") or p.get("persons") or p.get("q") or (p.get("folder") or "") != "":
-            vis.add(4)
+        if p.get("album") or p.get("persons") or p.get("q") or (p.get("folder") or "") != "" \
+                or p.get("inhalt") or p.get("nude"):  # (auch nude=ok)
+            vis.update((4, 5))
         where.append("COALESCE(i.hidden, 0) = 0" if vis == {0} else
                      "COALESCE(i.hidden, 0) IN (%s)" % ",".join(map(str, sorted(vis))))
+        if not cfg.get("show_sensitive", True) and not (vis - {0, 3}) and not p.get("album") \
+                and not p.get("persons") and not p.get("q"):  # Schalter „Heikle ausgeblendet“: Zeitleiste/Kalender/Karte
+            import content
+
+            where.append("i.id NOT IN (%s)" % content.SENSITIVE_IDS)
     else:
         where.append("COALESCE(i.hidden, 0) = %d" % hv)
     if p.get("stacks") in ("1", "only"):
@@ -178,11 +189,25 @@ def build_where(p):
         where.append("i.id IN (SELECT id FROM items WHERE pano <> '')")
     elif kind == "photo":
         where.append("i.kind IN ('photo','raw')")
-    elif kind in ("video", "raw"):
+    elif kind == "live":  # Live-Photo-Videos (livephotos.py, Teilindex items_vid)
+        where.append("i.id IN (SELECT id FROM items WHERE kind = 'video' AND live = 1)")
+    elif kind == "video":  # Videos ohne Live Photos
+        where.append("i.kind = 'video' AND i.id NOT IN (SELECT id FROM items WHERE kind = 'video' AND live = 1)")
+    elif kind == "raw":
         where.append("i.kind = ?")
         args.append(kind)
     if p.get("fav") == "1":
         where.append("(i.fav = 1 OR i.rating >= 4)")
+    if p.get("nude") in ("1", "2", "-1"):  # Heikel (content.py): Vorschläge, noch nicht bestätigt
+        where.append("i.nude = %d" % int(p["nude"]))
+        if p["nude"] != "-1":
+            where.append("i.nude_fix IS NULL")
+        if p.get("nudeall") != "1" and p["nude"] != "-1":
+            where.append("COALESCE(i.priv_eff, 0) = 0")  # noch zu entscheiden: nur nicht private
+    elif p.get("nude") == "ok":  # von dir bestätigt (Zeitleisten-Schalter, nie per DLNA)
+        where.append("i.nude IN (1, 2) AND i.nude_fix = 1")
+    if p.get("_inhalt_ids") is not None:  # Bildinhalt-Suche: nur die Treffer (Reihenfolge in query_items)
+        where.append("i.id IN (%s)" % (",".join(str(int(x)) for x in p["_inhalt_ids"]) or "0"))
     if p.get("nodate") == "1":
         where.append("(i.taken IS NULL OR i.taken_src IN ('file','undated'))")
     if p.get("album"):
@@ -193,9 +218,10 @@ def build_where(p):
         if ev:
             where.append("i.taken >= ? AND i.taken <= ?")
             args += [ev[0][:10], ev[1][:10] + " 23:59:59"]
-    if p.get("month"):
-        where.append("substr(i.taken, 1, 7) = ?")
-        args.append(p["month"])
+    if p.get("month"):  # Bereich statt substr – nutzt den Index auf taken
+        y, m = int(p["month"][:4]), int(p["month"][5:7])
+        where.append("i.taken >= ? AND i.taken < ?")
+        args += ["%04d-%02d" % (y, m), "%04d-%02d" % ((y + 1, 1) if m == 12 else (y, m + 1))]
     if p.get("geo") == "1":
         where.append("i.lat IS NOT NULL")
     folder = p.get("folder")
@@ -230,6 +256,13 @@ def events_by_month():
 
 
 def query_items(p):
+    rank = None
+    if p.get("inhalt"):  # Bildinhalt: Treffer nach Ähnlichkeit (content.py)
+        import content
+
+        hits = content.search(p["inhalt"], limit=max(1, min(int(p.get("top") or 300), 5000)))
+        rank = {i: k for k, (i, _s) in enumerate(hits)}
+        p = dict(p, _inhalt_ids=list(rank))
     where, args = build_where(p)
     asc = p.get("sort") == "asc"
     if p.get("folder") and p.get("recursive") != "1":
@@ -238,14 +271,23 @@ def query_items(p):
         order = "i.taken IS NULL, i.taken %s, i.id" % ("ASC" if asc else "DESC")
     rows = db().execute("SELECT i.id, i.taken, i.kind, COALESCE(i.priv_eff, 0) FROM items i%s ORDER BY %s"
                         % (where, order), args).fetchall()
+    if rank is not None:
+        rows.sort(key=lambda r: rank.get(r[0], 1 << 30))
     ids, groups, videos, private = [], [], [], []
     last = None
+    evs = []  # Monatsansicht (evgroups=1): Fotos eines Ereignisses als eigener Abschnitt „ev:<id>“
+    if p.get("evgroups") == "1":
+        evs = [(r[0], r[1][:10], r[2][:10] + " 23:59:59") for r in db().execute("SELECT id, start, end FROM events")]
     for iid, taken, kind, priv in rows:
         if priv:
             private.append(len(ids))
         key = taken[:7] if taken else "ohne"
-        if p.get("folder") and p.get("recursive") != "1":
+        if (p.get("folder") and p.get("recursive") != "1") or rank is not None:
             key = "ordner"
+        elif evs and taken:
+            hit = [e for e in evs if e[1] <= taken <= e[2]]
+            if hit:  # bei Überschneidung das kürzere (genauere) Ereignis
+                key = "ev:%d" % min(hit, key=lambda e: (e[2], -int(e[1].replace("-", ""))))[0]
         if key != last:
             groups.append([key, 0])
             last = key
@@ -254,12 +296,20 @@ def query_items(p):
         if kind == "video":
             videos.append(len(ids) - 1)
     out = {"ids": ids, "groups": groups, "videos": videos, "total": len(ids), "events": events_by_month()}
+    if evs:
+        used = {int(g[0][3:]) for g in groups if g[0].startswith("ev:")}
+        out["evinfo"] = {"ev:%d" % r[0]: {"id": r[0], "name": r[1], "start": r[2], "end": r[3]} for r in db().execute(
+            "SELECT id, name, start, end FROM events") if r[0] in used}
     import stacks
 
     sz = stacks.sizes(db())  # Belichtungsreihen: Stapel-Kennzeichen am Titelbild
     out["stacks"] = [[k, sz[iid]] for k, iid in enumerate(ids) if iid in sz] if sz else []
     pano = {r[0] for r in db().execute("SELECT id FROM items WHERE pano <> ''")}  # 360°-Kennzeichen (Teilindex)
     out["panos"] = [k for k, iid in enumerate(ids) if iid in pano] if pano else []
+    if videos:  # Länge (s) je Video und Live-Photo-Kennzeichen, aus dem Teilindex items_vid
+        vinfo = {r[0]: (r[1], r[2]) for r in db().execute("SELECT id, live, duration FROM items WHERE kind = 'video'")}
+        out["vdur"] = [round((vinfo.get(ids[k]) or (0, 0))[1] or 0) for k in videos]
+        out["live"] = [k for k in videos if (vinfo.get(ids[k]) or (0,))[0] == 1]
     # gesperrt: Platzhalter statt Vorschau; entsperrt: Liste nur fürs Nicht-Zwischenspeichern
     out["locked" if p.get("_locked") else "private"] = private
     return out
@@ -275,7 +325,7 @@ def folder_tree():
     covers = {}
     for folder, n, cover in db().execute(
             "SELECT folder, COUNT(*), MAX(CASE WHEN COALESCE(priv_eff,0)=0 THEN id END) FROM items "
-            "WHERE dup_of IS NULL AND raw_of IS NULL AND COALESCE(hidden,0)=0 GROUP BY folder"):
+            "WHERE dup_of IS NULL AND raw_of IS NULL AND COALESCE(hidden,0) IN (0,4,5) GROUP BY folder"):
         counts[folder] = n
         covers[folder] = cover
     tree = {}
@@ -501,6 +551,9 @@ class Handler(BaseHTTPRequestHandler):
         u = urllib.parse.urlparse(self.path)
         p = {k: v[-1] for k, v in urllib.parse.parse_qs(u.query).items()}
         path = u.path
+        self._remote = False
+        if getattr(self.server, "remote", False) and not remote.gate(self, method, path):
+            return  # Heimnetz: nicht angemeldet / nicht erlaubt (remote.py hat geantwortet)
         try:
             for m, pattern, fn in ROUTES:
                 if m != method:
@@ -566,6 +619,10 @@ def r_status(h, p):
         "all_folders": common.top_level_folders(),
         "included": common.included_folders(),
         "private": {"password": privacy.has_password(c), "unlocked": not locked(h)},
+        "remote_client": bool(getattr(h, "_remote", False)),  # über das Heimnetz angemeldet
+        "sensitive": {"count": c.execute("SELECT COUNT(*) FROM items WHERE nude <> 0 AND nude > 0 "
+                                         "AND nude_fix = 1").fetchone()[0],
+                      "show": common.load_config().get("show_sensitive", True)},
     }
     h.send_json(st)
 
@@ -629,7 +686,7 @@ def r_cameras(h, p):
 
 def r_years(h, p):
     rows = db().execute("SELECT substr(taken,1,4) y, COUNT(*) FROM items WHERE taken IS NOT NULL AND dup_of IS NULL "
-                        "AND raw_of IS NULL AND COALESCE(hidden,0)=0 GROUP BY y ORDER BY y DESC").fetchall()
+                        "AND raw_of IS NULL AND %s GROUP BY y ORDER BY y DESC" % _timeline_cond(p)).fetchall()
     h.send_json(rows)
 
 
@@ -843,6 +900,93 @@ def r_namedates_apply(h, p):
     h.send_json({"ok": True, "count": len(done)})
 
 
+def r_content(h, p):
+    import content
+
+    d = content.counts(db())
+    d["job"] = content.JOB
+    h.send_json(d)
+
+
+def r_content_scan(h, p):
+    import content
+
+    b = h.body()
+    if b.get("stop"):
+        content.JOB["stop"] = True
+        return h.send_json({"ok": True})
+    cfg = common.load_config()
+    if not cfg.get("content"):
+        cfg["content"] = True  # ab jetzt auch Neues nach dem Einlesen prüfen
+        common.save_config(cfg)
+    h.send_json({"ok": content.scan()})
+
+
+def r_content_download(h, p):
+    """Modelle laden (+ onnxruntime aus runtime/wheels), dann Erkennung starten – im Hintergrund."""
+    import content
+
+    def run():
+        try:
+            content.JOB["message"] = "Modelle werden geladen …"
+            if not content.ensure_runtime():
+                content.JOB["message"] = "onnxruntime fehlt und ließ sich nicht installieren."
+                return
+            content.download(lambda f: content.JOB.update(message="Lädt " + f + " …"))
+            cfg = common.load_config()
+            cfg["content"] = True
+            common.save_config(cfg)
+            content.scan()
+        except Exception as ex:
+            content.JOB["message"] = "Fehler beim Laden: %s" % ex
+
+    threading.Thread(target=run, daemon=True).start()
+    h.send_json({"ok": True})
+
+
+def r_content_level(h, p):
+    import content
+
+    b = h.body()
+    lv = b.get("level")
+    content.set_level(db(), _ids(b), None if lv in (None, "", 0) else (1 if int(lv) == 1 else 2))
+    h.send_json({"ok": True})
+
+
+def r_content_show(h, p):
+    """Schalter „Heikle sichtbar/ausgeblendet“ (Zeitleiste/Kalender)."""
+    cfg = common.load_config()
+    cfg["show_sensitive"] = bool(h.body().get("on"))
+    common.save_config(cfg)
+    h.send_json({"ok": True})
+
+
+def _tv_ids(h, ids):
+    """Für Fernseher/Frame: wie _visible_ids, dazu nie heikle Fotos (außer config tv_sensitive)."""
+    ids = _visible_ids(h, ids)
+    if not ids or common.load_config().get("tv_sensitive"):
+        return ids
+    import content
+
+    hot = {r[0] for r in db().execute(content.SENSITIVE_IDS)}
+    return [i for i in ids if i not in hot]
+
+
+def r_content_notnude(h, p):
+    import content
+
+    b = h.body()
+    content.not_nude(db(), _ids(b), bool(b.get("on", True)))
+    h.send_json({"ok": True})
+
+
+def r_live_count(h, p):
+    import livephotos
+
+    n = db().execute("SELECT COUNT(*) FROM items WHERE kind = 'video' AND live = 1 AND hidden IS NOT 2").fetchone()[0]
+    h.send_json({"count": n, "scan": livephotos.RUN})
+
+
 def r_panos_count(h, p):
     h.send_json({"count": db().execute("SELECT COUNT(*) FROM items WHERE pano <> '' AND COALESCE(hidden,0) != 2").fetchone()[0]})
 
@@ -884,11 +1028,12 @@ def r_folders(h, p):
     path = p.get("path", "")
     node = tree.get(path)
     if node is None:
-        return h.send_json({"path": path, "children": [], "direct": 0})
+        return h.send_json({"path": path, "children": [], "direct": 0, "aside_rule": aside.rule_for(path)})
     kids = sorted((tree[c] for c in node["children"]), key=lambda n: n["name"].lower(),
                   reverse=bool(re.fullmatch(r"\d{4}", (tree[next(iter(node["children"]))]["name"] if node["children"] else ""))))
     cc = custom_covers("folder", locked(h))
     h.send_json({"path": path, "name": node["name"], "direct": node["direct"], "total": node["total"],
+                 "aside_rule": aside.rule_for(path) if path else None,
                  "children": [{"path": k["path"], "name": k["name"], "total": k["total"],
                                "cover": cc.get(k["path"], k["cover"])} for k in kids]})
 
@@ -1110,6 +1255,19 @@ def r_cluster(h, p, cl):
                           " ORDER BY f.score DESC LIMIT 1000", (int(cl),)))
 
 
+def _timeline_cond(p):
+    """Welche Zeitleiste: normal (hidden 0), „Beiseite“ (aside=1, hidden 5) oder alle Dokumente (docs=1)."""
+    if p.get("aside") == "1":
+        return "hidden=5"
+    if p.get("docs") == "1":
+        return "(hidden=4 OR (COALESCE(hidden,0) IN (0,3) AND doc_state=1))"
+    if not common.load_config().get("show_sensitive", True):
+        import content
+
+        return "COALESCE(hidden,0)=0 AND id NOT IN (%s)" % content.SENSITIVE_IDS
+    return "COALESCE(hidden,0)=0"
+
+
 def r_calendar(h, p):
     """Jahre × Monate wie bei Mylio: Anzahl, Titelbild und Ereignis pro Monat."""
     c = db()
@@ -1121,7 +1279,7 @@ def r_calendar(h, p):
     for iid, taken, kind, fav, rating, camera, ext, priv in c.execute(
             "SELECT id, taken, kind, fav, rating, camera, ext, COALESCE(priv_eff,0) FROM items "
             "WHERE taken IS NOT NULL AND dup_of IS NULL "
-            "AND raw_of IS NULL AND COALESCE(hidden,0)=0 AND (taken_src IS NULL OR taken_src NOT IN ('file','undated'))"):
+            "AND raw_of IS NULL AND %s AND (taken_src IS NULL OR taken_src NOT IN ('file','undated'))" % _timeline_cond(p)):
         key = taken[:7]
         # Titelbild: Favoriten/Bewertung und Fotos mit Personen bevorzugen, Screenshots/Belege
         # (PNG, ohne Kamera) möglichst nicht, sonst zufällig aber stabil
@@ -1136,8 +1294,9 @@ def r_calendar(h, p):
             b[0] += 1
             if score > b[2]:
                 b[1], b[2] = iid, score
-    ev = events_by_month()
-    cc = custom_covers("month", hide)
+    own = p.get("aside") == "1" or p.get("docs") == "1"  # eigene Zeitleiste: ohne Ereignisse/Monatstitelbilder
+    ev = {} if own else events_by_month()
+    cc = {} if own else custom_covers("month", hide)
     h.send_json({k: {"count": v[0], "cover": cc.get(k) or (v[1] if v[2] > -1e8 else None), "events": ev.get(k, [])}
                  for k, v in best.items()})
 
@@ -1152,7 +1311,7 @@ def r_albums(h, p):
         n, cover, open_cover = c.execute(
             "SELECT COUNT(*), MAX(ai.item_id), MAX(CASE WHEN COALESCE(i.priv_eff,0)=0 THEN ai.item_id END) "
             "FROM album_items ai JOIN items i ON i.id=ai.item_id "
-            "WHERE ai.album_id=? AND i.dup_of IS NULL AND COALESCE(i.hidden,0) IN (0,3,4)", (aid,)).fetchone()
+            "WHERE ai.album_id=? AND i.dup_of IS NULL AND COALESCE(i.hidden,0) IN (0,3,4,5)", (aid,)).fetchone()
         cover = own_cover or cover
         if hide:
             if aid in priv_albums:
@@ -1239,6 +1398,25 @@ def r_items_hide(h, p):
     stacks.repair(db())
     _tree_cache.clear()
     h.send_json({"ok": True})
+
+
+def r_aside(h, p):
+    """Fotos beiseitelegen (on) bzw. zurück in die Zeitleiste."""
+    b = h.body()
+    ids = _visible_ids(h, _ids(b))
+    n = aside.put(db(), ids) if b.get("on") else aside.back(db(), ids)
+    _tree_cache.clear()
+    h.send_json({"ok": True, "count": n})
+
+
+def r_aside_folder(h, p):
+    b = h.body()
+    try:
+        n = aside.set_folder(db(), b.get("path") or "", bool(b.get("on")))
+    except ValueError as ex:
+        return h.send_json({"error": str(ex)}, 400)
+    _tree_cache.clear()
+    h.send_json({"ok": True, "count": n})
 
 
 def r_items_rotate(h, p):
@@ -1722,7 +1900,7 @@ def r_stats(h, p):
     import trash
 
     c = db()
-    vis = "dup_of IS NULL AND raw_of IS NULL AND COALESCE(hidden,0) IN (0,3,4)" + (" AND COALESCE(priv_eff,0)=0" if locked(h) else "")
+    vis = "dup_of IS NULL AND raw_of IS NULL AND COALESCE(hidden,0) IN (0,3,4,5)" + (" AND COALESCE(priv_eff,0)=0" if locked(h) else "")
     kinds = {}
     first = last = None
     for kind, n, size, lo, hi, fav, geo in c.execute(
@@ -1756,6 +1934,7 @@ def r_stats(h, p):
         "folders": c.execute("SELECT COUNT(DISTINCT folder) FROM items WHERE COALESCE(hidden,0) != 2").fetchone()[0],
         "dups": dups[0], "dups_size": dups[1],
         "hidden": c.execute("SELECT COUNT(*) FROM items WHERE hidden=1").fetchone()[0],
+        "aside": aside.count(c),
         "stacks": c.execute("SELECT COUNT(DISTINCT stack), COUNT(*) FROM items WHERE stack IS NOT NULL "
                             "AND COALESCE(hidden,0) IN (0,3)").fetchone(),
         "trash": trash.stats(c),
@@ -2079,6 +2258,31 @@ def r_share_stop(h, p):
 
 # ------------------------------------------------------------- Privat ----
 
+def r_remote(h, p):
+    h.send_json(dict(remote.status(), client=bool(getattr(h, "_remote", False))))
+
+
+def r_remote_settings(h, p):
+    """Im Heimnetz bedienen: an/aus, Passwort, alle abmelden – nur am Rechner selbst (remote.LOCAL_ONLY)."""
+    b = h.body()
+    if b.get("password") is not None:
+        if len(b["password"]) < 6:
+            return h.send_json({"error": "Das Passwort braucht mindestens 6 Zeichen"}, 400)
+        remote.set_password(b["password"])
+    if b.get("logout_all"):
+        remote.logout()
+    if "on" in b:
+        if b["on"] and not remote.load().get("hash"):
+            return h.send_json({"error": "Bitte zuerst ein Passwort festlegen"}, 400)
+        remote.set_on(b["on"])
+        if b["on"]:
+            if not remote.start(Handler, ExclusiveServer):
+                return h.send_json({"error": "Kein freier Port (8775–8779) gefunden"}, 500)
+        else:
+            remote.stop()
+    h.send_json(remote.status())
+
+
 def r_private_status(h, p):
     h.send_json({"password": privacy.has_password(db()), "unlocked": not locked(h)})
 
@@ -2242,7 +2446,7 @@ def r_frame_send(h, p):
     import frame
 
     b = h.body()
-    ids = _visible_ids(h, _ids(b))
+    ids = _tv_ids(h, _ids(b))
     if not ids:
         return h.send_json({"error": "Keine (freigegebenen) Fotos ausgewählt"}, 400)
     ok = frame.start(frame.send, ids, int(b.get("slideshow") or 0))
@@ -2262,7 +2466,7 @@ def r_tv_show(h, p):
     import dlna
 
     b = h.body()
-    ids = _visible_ids(h, _ids(b))
+    ids = _tv_ids(h, _ids(b))
     if not ids:
         return h.send_json({"error": "Keine (freigegebenen) Fotos ausgewählt"}, 400)
     try:
@@ -2285,7 +2489,9 @@ def r_tv_one(h, p):
     iid = int(b.get("id", 0))
     if is_blocked(h, iid):
         return h.send_json({"error": "Privat – erst entsperren"}, 403)
-    pre = _visible_ids(h, [int(x) for x in b.get("prefetch", [])][:4])
+    if not _tv_ids(h, [iid]):
+        return h.send_json({"error": "Heikles Foto – wird auf dem Fernseher nicht gezeigt"}, 403)
+    pre = _tv_ids(h, [int(x) for x in b.get("prefetch", [])][:4])
     try:
         dlna.show_one(iid, pre)
     except Exception as ex:
@@ -2384,6 +2590,52 @@ def r_edit_src(h, p, iid):
     buf = io.BytesIO()
     im.save(buf, "JPEG", quality=92)
     h.send_bytes(buf.getvalue(), "image/jpeg", cache=0)
+
+
+def r_items_edit(h, p):
+    """Sammelbearbeitung: action auto (✨ Auto je Foto) | reset (zurück zum Original) | paste (edit übernehmen,
+    ohne Zuschnitt/Begradigen). Originale bleiben unverändert. Der Browser schickt kleine Pakete (Fortschritt)."""
+    import edit as editmod
+    import media
+
+    b = h.body()
+    act = b.get("action")
+    paste = editmod.clean(b.get("edit")) if act == "paste" else None
+    if paste:
+        paste = {k: v for k, v in paste.items() if k not in ("crop", "angle", "flip")} or None
+    c = db()
+    done, skipped = [], 0
+    for iid in _ids(b):
+        row = c.execute("SELECT path, kind, userrot, edit FROM items WHERE id=?", (iid,)).fetchone()
+        if not row or row[1] == "video" or is_blocked(h, iid):
+            skipped += 1
+            continue
+        old = editmod.parse(row[3]) or {}
+        if act == "reset":
+            e = None
+        elif act == "paste":
+            e = editmod.clean(dict({k: v for k, v in old.items() if k in ("crop", "angle", "flip")}, **(paste or {})))
+        else:
+            try:
+                im = media.open_image(to_abs(row[0]), row[1], max_side=512, userrot=row[2] or 0)[0]
+                e = editmod.auto(im, old)
+            except Exception:
+                skipped += 1
+                continue
+        c.execute("UPDATE items SET edit=? WHERE id=?", (json.dumps(e) if e else None, iid))
+        done.append(iid)
+    c.commit()
+    THUMBS.delete(done)
+    PREVIEWS.delete(done)
+    try:
+        import lan
+
+        lan._jpeg_cache.clear()
+    except Exception:
+        pass
+    for iid in done:
+        thumb_bytes(iid)
+    h.send_json({"ok": True, "done": len(done), "skipped": skipped})
 
 
 def r_edit_save(h, p, iid):
@@ -3003,6 +3255,8 @@ ROUTES = [
     ("GET", r"/api/private/status", r_private_status),
     ("POST", r"/api/private/password", r_private_password),
     ("POST", r"/api/private/unlock", r_private_unlock),
+    ("GET", r"/api/remote", r_remote),
+    ("POST", r"/api/remote/settings", r_remote_settings),
     ("POST", r"/api/private/lock", r_private_lock),
     ("POST", r"/api/items/private", r_items_private),
     ("GET", r"/screen/(\d+)", r_screen),
@@ -3028,6 +3282,8 @@ ROUTES = [
     ("POST", r"/api/icloud/remove", r_icloud_remove),
     ("POST", r"/api/items/fav", r_items_fav),
     ("POST", r"/api/items/hide", r_items_hide),
+    ("POST", r"/api/aside", r_aside),
+    ("POST", r"/api/aside/folder", r_aside_folder),
     ("POST", r"/api/items/delete", r_items_delete),
     ("POST", r"/api/folders/delete", r_folder_delete),
     ("GET", r"/api/trash", r_trash_status),
@@ -3066,6 +3322,14 @@ ROUTES = [
     ("GET", r"/pano/(\d+)", r_pano),
     ("POST", r"/api/panos/scan", r_panos_scan),
     ("GET", r"/api/panos/count", r_panos_count),
+    ("GET", r"/api/live/count", r_live_count),
+    ("POST", r"/api/items/edit", r_items_edit),
+    ("GET", r"/api/content", r_content),
+    ("POST", r"/api/content/scan", r_content_scan),
+    ("POST", r"/api/content/download", r_content_download),
+    ("POST", r"/api/content/notnude", r_content_notnude),
+    ("POST", r"/api/content/level", r_content_level),
+    ("POST", r"/api/content/show", r_content_show),
     ("GET", r"/api/namedates", r_namedates),
     ("POST", r"/api/namedates/apply", r_namedates_apply),
     ("GET", r"/face/(\d+)", r_face_img),
@@ -3282,7 +3546,25 @@ def main():
             threading.Thread(target=ocr.loop, daemon=True).start()
         except Exception as ex:
             print(" Eingangsordner nicht gestartet:", ex)
+        try:
+            import livephotos
+
+            livephotos.start()  # Live-Photo-Videos erkennen (nur noch ungeprüfte)
+        except Exception as ex:
+            print(" Live-Photo-Erkennung nicht gestartet:", ex)
+        try:
+            import content
+
+            if common.load_config().get("content") and content.available():
+                content.scan()  # Bildinhalt/Heikel: Rest fortsetzen (nur Ungeprüftes)
+        except Exception as ex:
+            print(" Bildinhalt-Erkennung nicht gestartet:", ex)
     threading.Timer(5, resume).start()
+    try:
+        if remote.start(Handler, ExclusiveServer):  # Im Heimnetz bedienen (eingeschaltet)
+            print(" Im Heimnetz erreichbar:   " + (remote.lan_url() or ""))
+    except Exception as ex:
+        print(" Heimnetz-Zugang nicht gestartet:", ex)
     try:
         srv.serve_forever()
     except KeyboardInterrupt:

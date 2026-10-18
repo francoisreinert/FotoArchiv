@@ -13,6 +13,7 @@ async function api(path, body) {
   const opt = body === undefined ? {} : { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify(body) };
   const r = await fetch(path, opt);
   const data = await r.json().catch(() => ({}));
+  if (r.status === 401 && data.error === "Bitte anmelden") location.reload();  // Heimnetz: abgemeldet → Anmeldeseite
   if (!r.ok) throw Object.assign(new Error(data.error || r.statusText), { data, status: r.status });
   return data;
 }
@@ -52,7 +53,7 @@ function fmtSize(b) {
 const state = {
   persons: [],          // Liste aller Personen
   chips: [],            // gewählte Personen-Filter (ids)
-  filters: { q: "", from: "", to: "", kind: "", fav: false, nodate: false, dups: false, stacks: "", sort: "desc" },
+  filters: { q: "", from: "", to: "", kind: "", fav: false, nodate: false, dups: false, stacks: "", sort: "asc" },  // Standard: älteste zuerst
   zoom: +(localStorageGet("zoom") || 190),
   priv: { password: false, unlocked: null },  // null = noch unbekannt (erster Statusabruf)
   hasS3: false,         // S3-Ziel eingerichtet? Nur dann "🌐 Webseite" anbieten (backup.js)
@@ -79,7 +80,7 @@ function filterParams(extra = {}) {
   if (f.nodate) p.set("nodate", "1");
   if (f.dups) p.set("dups", "1");
   if (f.stacks) p.set("stacks", f.stacks);  // Belichtungsreihen: "open" = einzeln, "only" = nur Reihen
-  if (f.sort !== "desc") p.set("sort", f.sort);
+  p.set("sort", f.sort);
   for (const [k, v] of Object.entries(extra)) if (v !== undefined && v !== null) p.set(k, v);
   state.lastExtra = extra;  // für die Kameraliste der aktuellen Ansicht
   return p;
@@ -97,10 +98,13 @@ class VGrid {
     this.groups = result.groups;
     this.videos = new Set(result.videos);
     this.panos = new Set(result.panos || []);  // 360°-Fotos (Kennzeichen „360°“)
+    this.vdur = new Map((result.videos || []).map((k, j) => [k, (result.vdur || [])[j]]));  // Videolänge in s
+    this.live = new Set(result.live || []);  // Live-Photo-Videos
     this.stacks = new Map(result.stacks || []);  // Index → Anzahl Fotos der Belichtungsreihe (Titelbild)
     this.lockedSet = new Set(result.locked || []);
     window.lockedIds = new Set((result.locked || []).map(i => result.ids[i]));
     this.events = result.events || {};
+    this.evinfo = result.evinfo || {};  // Monatsansicht: Abschnitte „ev:<id>“ = Fotos eines Ereignisses
     this.opts = opts;
     this.context = opts.context || {};
     this.sel = new Set();
@@ -113,7 +117,10 @@ class VGrid {
     main.addEventListener("scroll", this.onScroll, { passive: true });
     this.ro = new ResizeObserver(() => { if (this.el.clientWidth !== this.lastW) this.layout(); });
     this.ro.observe(this.el);
+    // Shift+Klick: keine Text-/Bildauswahl des Browsers (sonst färbt sich alles dazwischen blau)
+    this.el.addEventListener("mousedown", e => { if (e.shiftKey) e.preventDefault(); });
     this.el.addEventListener("click", e => {
+      if (e.shiftKey) { const s = window.getSelection && window.getSelection(); if (s) s.removeAllRanges(); }
       if (e.target.closest("a")) return;
       const hchk = e.target.closest(".hchk");
       if (hchk) { this.toggleRange(+hchk.dataset.s, +hchk.dataset.e); return; }
@@ -216,8 +223,10 @@ class VGrid {
         const h = document.createElement("div");
         h.className = "h";
         h.style.cssText = `top:${row.y}px;height:${row.h}px`;
-        const evs = this.events[row.key] || [];
-        h.innerHTML = `${esc(groupLabel(row.key))}<small>${row.count}</small>` +
+        const evs = this.events[row.key] || [], ei = this.evinfo[row.key];
+        if (ei) h.classList.add("evh");
+        h.innerHTML = (ei ? `<a href="#/ereignis/${ei.id}" title="Ereignis öffnen">📅 ${esc(ei.name)}</a><small>${fmtRange(ei.start, ei.end)} · ${row.count}</small>`
+          : `${esc(groupLabel(row.key))}<small>${row.count}</small>`) +
           (evs.length ? `<span class="evs">${evs.map(e => `<a href="#/ereignis/${e.id}">${esc(e.name)}</a>`).join(" · ")}</span>` : "") +
           `<span class="hchk" data-s="${row.start}" data-e="${row.start + row.count}">Monat auswählen</span>`;
         els.push(h);
@@ -228,7 +237,7 @@ class VGrid {
           d.dataset.i = i;
           d.style.cssText = `top:${row.y}px;left:${(i - row.start) * this.size}px;width:${this.size}px;height:${this.size}px`;
           d.innerHTML = this.lockedSet.has(i) ? `<div class="lockcell" title="Privat – zum Entsperren klicken">🔒</div><span class="chk"></span>`
-            : `<img decoding="async" src="${thumbUrl(this.ids[i])}" alt=""><span class="chk"></span>` + (this.videos.has(i) ? '<span class="vid">▶</span>' : "")
+            : `<img decoding="async" src="${thumbUrl(this.ids[i])}" alt=""><span class="chk"></span>` + (this.videos.has(i) ? vidBadge(this.vdur.get(i), this.live.has(i)) : "")
               + (this.panos.has(i) ? '<span class="pano360" title="360°-Foto">360°</span>' : "")
               + (this.stacks.has(i) ? `<span class="stk" title="Belichtungsreihe mit ${this.stacks.get(i)} Fotos – im Betrachter unten alle Belichtungen">❐ ${this.stacks.get(i)}</span>` : "")
               + `<span class="vadd" title="Zum Videoprojekt hinzufügen (Shift+Klick: anderes Projekt)">🎬+</span>`;
@@ -339,6 +348,7 @@ const routes = {
         ${tile("#/favoriten", s.fav, "Favoriten")}
         ${tile("#/duplikate", s.dups, "Duplikate", s.dups ? `${fmtSize(s.dups_size)} – prüfen und aufräumen` : "")}
         ${s.stacks && s.stacks[0] ? tile("#/fotos", s.stacks[0], "Belichtungsreihen", `${num(s.stacks[1])} Fotos, zu je einem Stapel zusammengefasst`).replace("<a ", '<a id="st-stacks" ') : ""}
+        ${s.aside ? tile("#/beiseite", s.aside, "Beiseite", "nicht in der Zeitleiste") : ""}
         ${s.hidden ? tile("#/ausgeblendet", s.hidden, "Ausgeblendet") : ""}
         ${s.trash.count ? tile("#/papierkorb", s.trash.count, "im Papierkorb", fmtSize(s.trash.size)) : ""}
       </div>
@@ -399,15 +409,18 @@ const routes = {
     openViewer(i >= 0 ? ids : [+id], Math.max(0, i));
     return g;
   },
-  async kalender() {
+  // mode: leer = Zeitleiste, "aside" = Beiseite, "docs" = alle Dokumente (pre = Reiter der Dokumente-Seite)
+  async kalender(mode, pre = "") {
     clearMain();
+    const aside = !!mode;
     const page = document.createElement("div");
     page.className = "page";
-    page.innerHTML = `<h1>Kalender <small>lädt …</small></h1>`;
+    const title = mode === "docs" ? "📄 Dokumente" : mode ? `Beiseite › Kalender <a href="#/beiseite"><button class="ghost">☰ Zeitleiste</button></a>` : "Kalender";
+    page.innerHTML = `<h1>${title} <small>lädt …</small></h1>${pre}`;
     main.appendChild(page);
-    const cal = await api("/api/calendar");
+    const cal = await api("/api/calendar" + (mode === "docs" ? "?docs=1" : mode ? "?aside=1" : ""));
     const keys = Object.keys(cal).sort();
-    if (!keys.length) { page.innerHTML += `<div class="empty">Noch keine datierten Fotos.</div>`; return; }
+    if (!keys.length) { page.innerHTML = `<h1>${title}</h1>${pre}<div class="empty">Noch keine datierten Fotos.</div>`; return; }
     const y0 = +keys[0].slice(0, 4), y1 = +keys[keys.length - 1].slice(0, 4);
     const short = ["Jan", "Feb", "Mär", "Apr", "Mai", "Jun", "Jul", "Aug", "Sep", "Okt", "Nov", "Dez"];
     let html = "";
@@ -417,13 +430,19 @@ const routes = {
       for (let m = 0; m < 12; m++) {
         const k = `${y}-${String(m + 1).padStart(2, "0")}`, c = cal[k];
         if (!c) { html += `<div class="mo empty"><span class="m">${short[m]}</span></div>`; continue; }
-        const ev = c.events[0];
-        html += `<a class="mo" href="${ev && c.events.length === 1 ? "#/ereignis/" + ev.id : "#/fotos?zu=" + k}" title="${esc(MONTHS[m])} ${y}: ${c.count} Fotos${c.events.length ? " – " + esc(c.events.map(e => e.name).join(", ")) : ""}">
+        html += `<a class="mo" href="${mode === "docs" ? "#/dokumente?zu=" + k : aside ? "#/beiseite?zu=" + k : "#/monat/" + k}" title="${esc(MONTHS[m])} ${y}: ${c.count} Fotos${c.events.length ? " – " + esc(c.events.map(e => e.name).join(", ")) : ""}">
           ${c.cover ? `<img loading="lazy" src="/thumb/${c.cover}" alt="">` : `<div class="lockcell">🔒</div>`}<span class="m">${short[m]}</span><span class="n">${c.count}</span>
-          ${c.events.length ? `<span class="ev">${esc(c.events.map(e => e.name).join(" · "))}</span>` : ""}</a>`;
+          ${c.events.length ? `<span class="ev">${c.events.map(e => aside ? esc(e.name) : `<span class="evl" data-ev="${e.id}" title="Nur das Ereignis „${esc(e.name)}“ öffnen">📅 ${esc(e.name)}</span>`).join(" · ")}</span>` : ""}</a>`;
       }
     }
-    page.innerHTML = `<h1>Kalender <small>Monat anklicken zum Ansehen, Ereignis-Monate öffnen das Ereignis</small></h1><div class="cal">${html}</div>`;
+    page.innerHTML = `<h1>${title} <small>Monat anklicken = ganzer Monat${aside ? "" : ", Ereignisname anklicken = nur das Ereignis"}</small></h1>${pre}<div class="cal">${html}</div>`;
+    // Ereignisname auf der Monatskachel: öffnet nur das Ereignis (die Kachel selbst öffnet den ganzen Monat)
+    page.querySelector(".cal").addEventListener("click", ev => {
+      const t = ev.target.closest("[data-ev]");
+      if (!t) return;
+      ev.preventDefault();
+      location.hash = "#/ereignis/" + t.dataset.ev;
+    });
   },
   async alben(parent) {
     clearMain();
@@ -539,6 +558,16 @@ const routes = {
     if (res.total) currentGrid = new VGrid(main, res, { context: { album: a.id, albumName: a.name } });
     else main.insertAdjacentHTML("beforeend", `<div class="empty">Noch leer. In „Fotos“ Bilder markieren und „+ Album“ wählen.</div>`);
   },
+  async monat(k) {  // aus dem Kalender: ein Monat, Ereignisse darin als eigene Abschnitte
+    const [y, m] = k.split("-");
+    const prev = +m === 1 ? `${+y - 1}-12` : `${y}-${String(+m - 1).padStart(2, "0")}`;
+    const next = +m === 12 ? `${+y + 1}-01` : `${y}-${String(+m + 1).padStart(2, "0")}`;
+    await showGrid(`${MONTHS[+m - 1]} ${y}`, { month: k, evgroups: 1 }, {
+      headExtra: `<a href="#/monat/${prev}"><button class="ghost" title="Vormonat">‹</button></a><a href="#/monat/${next}"><button class="ghost" title="Nächster Monat">›</button></a>
+        <a href="#/kalender"><button class="ghost">📅 Kalender</button></a><a href="#/fotos?zu=${k}"><button class="ghost" title="In der Zeitleiste zeigen">☰ Zeitleiste</button></a>`,
+      empty: "In diesem Monat gibt es keine Fotos.",
+    });
+  },
   async ereignis(id) {
     const d = await api("/api/albums");
     const e = d.events.find(x => x.id === +id);
@@ -578,6 +607,118 @@ const routes = {
         };
       },
     });
+  },
+  async beiseite(tab) {
+    if (tab === "kalender") return routes.kalender("aside");
+    setSearchScope(null);
+    const years = await api("/api/years?aside=1");
+    const g = await showGrid("Beiseite", { aside: "1" }, {
+      context: { aside: true },
+      headExtra: `<span class="muted" style="margin-left:6px">nicht in der Zeitleiste</span>
+        <a href="#/beiseite/kalender"><button class="ghost">📅 Kalender</button></a>
+        ${years.length > 1 ? `<select id="asy" title="Zu einem Jahr springen"><option value="">Jahr …</option>${years.map(([y, n]) => `<option value="${y}">${y} (${n.toLocaleString("de-DE")})</option>`).join("")}</select>` : ""}`,
+      bind: head => {
+        const s = $("#asy", head);
+        if (s) s.onchange = () => { if (s.value && currentGrid) currentGrid.scrollToGroupPrefix(s.value); };
+      },
+      empty: "Hier liegt noch nichts. Fotos markieren › „Mehr …“ › „Aus der Zeitleiste nehmen“, oder in einem Ordner " +
+        "„Nicht in der Zeitleiste“ wählen – dann auch für alles, was später dort dazukommt. Die Fotos bleiben in Alben, Ordnern, " +
+        "bei Personen und in der Suche, nur Zeitleiste und Kalender bleiben sauber.",
+    });
+    const y = new URLSearchParams(location.hash.split("?")[1] || "").get("zu");
+    if (g && y) g.scrollToGroupPrefix(y);
+  },
+  // Bildinhalt: freie Suche nach dem, was zu sehen ist (content.py, lokal) und „Heikel“ zum Entscheiden
+  async inhalt(tab) {
+    setSearchScope(null);
+    const st = await api("/api/content");
+    const qs = new URLSearchParams(location.hash.split("?")[1] || "");
+    tab = tab || "suche";
+    const num = n => (n || 0).toLocaleString("de-DE");
+    const job = st.job;
+    const status = !st.available
+      ? `<div class="card"><b>Bildinhalt-Erkennung ist noch nicht eingerichtet.</b> Dafür werden einmalig Modelle geladen (~620 MB, ${esc(st.missing.join(", ") || "Laufzeit")}).
+         Danach rechnet alles auf diesem Rechner – kein Foto verlässt ihn. <button id="cdl" class="primary">Einrichten</button></div>`
+      : job.running ? `<div class="muted" style="margin:4px 0 10px">Erkennung läuft: ${num(job.done)} von ${num(job.total)} geprüft
+         (bis dahin findet die Suche nur die schon geprüften) <button id="cstop" class="ghost">Anhalten</button></div>`
+      : st.todo ? `<div class="muted" style="margin:4px 0 10px">${num(st.todo)} Fotos noch nicht geprüft <button id="cscan">Jetzt prüfen</button>${job.message ? " · " + esc(job.message) : ""}</div>` : "";
+    const tabs = `<div class="doctabs">
+      <a href="#/inhalt"><button class="${tab === "suche" ? "on" : ""}">🔎 Suche</button></a>
+      <a href="#/inhalt/nackt"><button class="${tab === "nackt" ? "on" : ""}" title="Nackte Haut an Brust, Po oder Intimbereich">Nackt (${num(st.nackt)})</button></a>
+      <a href="#/inhalt/knapp"><button class="${tab === "knapp" ? "on" : ""}" title="Bikini, Badeanzug, Unterwäsche">Knapp bekleidet (${num(st.knapp)})</button></a>
+      <a href="#/inhalt/ok"><button class="${tab === "ok" ? "on" : ""}" title="Von dir bestätigt – mit „👙“ aus der Zeitleiste ausblendbar, nie per DLNA auf dem Fernseher">✓ Bestätigt (${num(st.ok)})</button></a>
+      <a href="#/inhalt/nein"><button class="${tab === "nein" ? "on" : ""}" title="Als „nicht heikel“ markiert – hier wieder zurückholen">Nicht heikel</button></a></div>`;
+    const bindStatus = head => {
+      const d = $("#cdl", head), s = $("#cstop", head), c = $("#cscan", head);
+      if (d) d.onclick = async () => { d.disabled = true; d.textContent = "Wird geladen …"; await api("/api/content/download", {}); toast("Modelle werden geladen – danach startet die Erkennung", 6000); setTimeout(route, 4000); };
+      if (s) s.onclick = async () => { await api("/api/content/scan", { stop: true }); setTimeout(route, 1500); };
+      if (c) c.onclick = async () => { await api("/api/content/scan", {}); setTimeout(route, 1500); };
+    };
+    if (tab === "suche") {
+      const q = qs.get("q") || "", top = qs.get("top") || "300";
+      const ex = ["Fußball", "Strand", "Bikini", "Hund", "Geburtstagskuchen", "Schnee", "Weihnachtsbaum", "Sonnenuntergang", "Pferd", "Hochzeit"];
+      const form = `${tabs}${status}<form id="cform" class="row" style="gap:8px;margin:6px 0 4px;flex-wrap:wrap">
+          <input id="cq" value="${esc(q)}" placeholder="Was ist auf dem Foto? z. B. Fußball, Kinder am Strand, roter Traktor" style="flex:1;min-width:260px">
+          <select id="ctop" title="Wie viele der ähnlichsten Fotos zeigen">${["100", "300", "1000", "3000"].map(v => `<option value="${v}" ${v === top ? "selected" : ""}>beste ${num(+v)}</option>`).join("")}</select>
+          <button class="primary">Suchen</button></form>
+        <div class="muted" style="margin-bottom:8px">Beispiele: ${ex.map(x => `<a href="#/inhalt?q=${encodeURIComponent(x)}">${esc(x)}</a>`).join(" · ")}
+          · Mehrere Begriffe mit Komma = einer davon (z. B. „Bikini, Badeanzug“). Sortiert nach Ähnlichkeit – je weiter unten, desto unsicherer.</div>`;
+      if (!q) {
+        clearMain();
+        const page = document.createElement("div");
+        page.className = "page";
+        page.innerHTML = `<h1>🔍 Bildinhalt</h1>${form}`;
+        main.appendChild(page);
+        bindStatus(page);
+        bindForm(page);
+        return;
+      }
+      await showGrid(`Bildinhalt: „${q}“`, { inhalt: q, top }, {
+        context: { inhalt: q },
+        headExtra: `<button id="calb" title="Alle gezeigten Treffer in ein neues Album – oder nur die markierten, wenn du vorher eine Auswahl triffst">Alle in neues Album …</button>
+          <div style="flex-basis:100%"></div>${form}`,
+        bind: head => {
+          bindStatus(head);
+          bindForm(head);
+          $("#calb", head).onclick = async () => {
+            const g = currentGrid;
+            if (!g) return;
+            const ids = g.sel.size ? g.selectedIds() : g.ids;
+            const name = await askText(`${num(ids.length)} ${g.sel.size ? "ausgewählte " : ""}Fotos in ein neues Album – Name:`, q);
+            if (!name) return;
+            const r = await api("/api/albums", { name, ids });
+            toast(`Album „${name}“ mit ${num(ids.length)} Fotos angelegt`);
+            location.hash = "#/album/" + r.id;
+          };
+        },
+        empty: st.done ? "Nichts gefunden." : "Noch keine Fotos geprüft – die Erkennung muss erst laufen.",
+      });
+      return;
+    }
+    const lvl = { nackt: "2", knapp: "1", nein: "-1", ok: "ok" }[tab];
+    const all = qs.get("alle") === "1";
+    await showGrid(tab === "nackt" ? "Heikel: nackt" : tab === "knapp" ? "Heikel: knapp bekleidet" : tab === "ok" ? "Heikel: bestätigt" : "Nicht heikel", { nude: lvl, nudeall: all ? "1" : "" }, {
+      context: { nude: tab },
+      headExtra: `<div style="flex-basis:100%"></div>${tabs}${status}
+        ${tab === "nackt" || tab === "knapp" ? `<label class="muted"><input type="checkbox" id="call" ${all ? "checked" : ""}> auch schon private zeigen${st[tab + "_priv"] ? ` (${num(st[tab + "_priv"])})` : ""}</label>
+        <div class="muted" style="flex-basis:100%">Vorschläge der Erkennung: markieren und unten „✓ Bestätigen“, „→ Knapp/Bikini“ bzw. „→ Nackt“, „🔒 Privat“ oder „Nicht heikel“ wählen.
+          Nur bestätigte Fotos blendet der Schalter „👙“ oben aus der Zeitleiste aus, und sie erscheinen nie per DLNA auf dem Fernseher. Private Fotos erscheinen nie auf dem Fernseher, in iCloud-Uploads oder Web-Freigaben.
+          Die Erkennung irrt sich auch (Haut, Babys, Gemälde) – entschieden wird hier nur von dir.</div>` : ""}`,
+      bind: head => {
+        bindStatus(head);
+        const c = $("#call", head);
+        if (c) c.onchange = () => { location.hash = `#/inhalt/${tab}${c.checked ? "?alle=1" : ""}`; };
+      },
+      empty: !st.available || st.todo ? "Noch nichts gefunden – die Erkennung ist noch nicht durch." : "Nichts (mehr) zu entscheiden.",
+    });
+    function bindForm(el) {
+      const f = $("#cform", el);
+      if (f) f.onsubmit = e => {
+        e.preventDefault();
+        const v = $("#cq", el).value.trim();
+        location.hash = "#/inhalt?q=" + encodeURIComponent(v) + "&top=" + $("#ctop", el).value;
+      };
+    }
   },
   async ausgeblendet() {
     setSearchScope("Ausgeblendete");
@@ -751,6 +892,8 @@ const routes = {
     setSearchScope("Dokumente");
     const st = await api("/api/docs/status");
     let tab = localStorageGet("docTab") || "neu";
+    const zu = new URLSearchParams(location.hash.split("?")[1] || "").get("zu");
+    if (zu) { tab = "alle"; localStorageSet("docTab", tab); }  // aus dem Dokumente-Kalender
     if (tab === "alben" && state.filters.q) tab = "neu";  // Suche läuft ohnehin über alle Dokumente
     const level = localStorageGet("docLevel") || "normal", type = localStorageGet("docType") || "";
     const LV = { streng: 14, normal: 10, weit: 6 };
@@ -760,11 +903,20 @@ const routes = {
       <button data-tab="neu" class="${tab === "neu" ? "on" : ""}" title="Automatisch einsortiert, noch nicht entschieden">Neu <small>${num(st.neu)}</small></button>
       <button data-tab="behalten" class="${tab === "behalten" ? "on" : ""}" title="Dauerhaft behalten (Album „Dokumente“)">Behalten <small>${num(st.behalten)}</small></button>
       <button data-tab="vorschlag" class="${tab === "vorschlag" ? "on" : ""}" title="Unsichere Treffer – noch in der Zeitleiste">Vorschläge <small>${num(st.vorschlag)}</small></button>
+      <button data-tab="alle" class="${tab === "alle" ? "on" : ""}" title="Alle Dokumente (neu und behalten) nach Datum – eigene Zeitleiste">Alle nach Datum</button>
+      <button data-tab="kalender" class="${tab === "kalender" ? "on" : ""}" title="Alle Dokumente im Kalender">📅 Kalender</button>
       <button data-tab="alben" class="${tab === "alben" ? "on" : ""}" title="Eigene Alben nur für Dokumente – getrennt von den Fotoalben">Alben</button></div>`;
     const oc = st.ocr || {};
     const ocrInfo = !oc.available ? `<p class="muted" style="margin:8px 0 0">🔎 Text in Dokumenten erkennen und durchsuchen gibt es bisher nur unter Windows.</p>`
       : `<p class="muted" style="margin:8px 0 0">🔎 <b>Suche findet auch Text in den Dokumenten</b> (Suchfeld oben – sucht in allen Dokumenten).
         ${oc.running ? `Texterkennung läuft: ${num(oc.done)} von ${num(oc.total)} …` : oc.open ? `${num(oc.open)} noch ohne Texterkennung – läuft von selbst <button id="docr">Jetzt</button>` : `Text in ${num(oc.with_text)} Dokumenten erkannt.`}</p>`;
+    if (tab === "kalender") {
+      await routes.kalender("docs", tabs + ocrInfo);
+      $$(".doctabs [data-tab]").forEach(b => b.onclick = () => { localStorageSet("docTab", b.dataset.tab); if (location.hash.includes("?")) location.hash = "#/dokumente"; else route(); });
+      const ob = $("#docr");
+      if (ob) ob.onclick = async () => { await api("/api/ocr/start", {}); toast("Texterkennung läuft"); setTimeout(route, 1500); };
+      return;
+    }
     if (tab === "alben") {
       clearMain();
       const d = await api("/api/albums");
@@ -800,29 +952,35 @@ const routes = {
     const help = {
       neu: "Automatisch erkannte Dokumentfotos – nicht mehr in Zeitleiste und Kalender. Markieren und entscheiden: <b>✓ Behalten</b> (Album „Dokumente“), <b>🗑 Papierkorb</b> (kurzlebige) oder <b>Kein Dokument</b> (zurück in die Zeitleiste). Gelöschte holt kein Import wieder.",
       behalten: "Dauerhaft behaltene Dokumente – auch im Album „Dokumente“. Nicht in Zeitleiste und Kalender.",
+      alle: "Alle Dokumente – neu einsortierte und behaltene – nach Aufnahmedatum, wie eine eigene Zeitleiste.",
       vorschlag: "Fotos mit etwas Text, bei denen es nicht sicher ist. Sie stehen noch in der Zeitleiste. Markieren › <b>Einsortieren</b>, <b>✓ Behalten</b> oder <b>Kein Dokument</b>.",
     }[tab];
     if (state.filters.q) params.docs = "alle";
-    await showGrid("📄 Dokumente", params, {
+    const dyears = tab === "alle" ? await api("/api/years?docs=1") : [];
+    const g = await showGrid("📄 Dokumente", params, {
       context: { docs: tab },
       headExtra: `<select id="dtype" title="Art">${opt("", "Alle", type)}${opt("paper", "Papier (Briefe, Rechnungen …)", type)}${opt("screen", "Bildschirmfotos", type)}</select>
         ${tab === "vorschlag" ? `<select id="dlevel" title="Wie viel Text muss zu sehen sein?">${opt("streng", "streng (viel Text)", level)}${opt("normal", "normal", level)}${opt("weit", "weit (auch wenig Text)", level)}</select>` : ""}
+        ${dyears.length > 1 ? `<select id="dyear" title="Zu einem Jahr springen"><option value="">Jahr …</option>${dyears.map(([y, n]) => `<option value="${y}">${y} (${num(n)})</option>`).join("")}</select>` : ""}
         <button id="dall">Alle auswählen</button>
         <select id="dauto" title="Neue Fotos (z. B. nach einem Import) automatisch prüfen und einsortieren">
           ${opt("streng", "Automatisch: sichere einsortieren", st.auto)}${opt("normal", "Automatisch: auch unsichere", st.auto)}${opt("aus", "Automatisch: aus", st.auto)}</select>`,
-      empty: { neu: "Nichts Neues – alles entschieden.", behalten: "Noch keine Dokumente behalten.", vorschlag: "Keine weiteren Vorschläge." }[tab],
+      empty: { alle: "Noch keine Dokumente.", neu: "Nichts Neues – alles entschieden.", behalten: "Noch keine Dokumente behalten.", vorschlag: "Keine weiteren Vorschläge." }[tab],
       bind: head => {
         $("#dtype", head).onchange = e => { localStorageSet("docType", e.target.value); route(); };
         const dl = $("#dlevel", head);
         if (dl) dl.onchange = e => { localStorageSet("docLevel", e.target.value); route(); };
         $("#dall", head).onclick = () => currentGrid && currentGrid.selectAll();
+        const dy = $("#dyear", head);
+        if (dy) dy.onchange = () => { if (dy.value && currentGrid) currentGrid.scrollToGroupPrefix(dy.value); };
         $("#dauto", head).onchange = async e => { await api("/api/docs/auto", { auto: e.target.value }); toast("Gespeichert"); route(); };
       },
     });
     main.insertAdjacentHTML("afterbegin", `<div class="page" style="padding-bottom:0">${tabs}${scanInfo}${sortInfo}<p class="muted" style="margin:8px 0 0">${help}</p>${ocrInfo}</div>`);
     const ob = $("#docr");
     if (ob) ob.onclick = async () => { await api("/api/ocr/start", {}); toast("Texterkennung läuft"); setTimeout(route, 1500); };
-    $$(".doctabs [data-tab]").forEach(b => b.onclick = () => { localStorageSet("docTab", b.dataset.tab); route(); });
+    $$(".doctabs [data-tab]").forEach(b => b.onclick = () => { localStorageSet("docTab", b.dataset.tab); if (location.hash.includes("?")) location.hash = "#/dokumente"; else route(); });
+    if (g && zu) g.scrollToGroupPrefix(zu);
     const scan = $("#dscan"), stop = $("#dstop"), sortall = $("#dsortall");
     if (scan) scan.onclick = async () => { try { await api("/api/docs/scan", {}); route(); } catch (e) { toast(e.message, 8000); } };
     if (stop) stop.onclick = async () => { await api("/api/docs/stop", {}); toast("Wird angehalten …"); };
@@ -906,13 +1064,27 @@ const routes = {
     const parts = path ? path.split("/") : [];
     let crumbs = `<a href="#/ordner">Alle Ordner</a>`;
     parts.forEach((p, i) => { crumbs += ` › <a href="#/ordner/${encodeURIComponent(parts.slice(0, i + 1).join("/"))}">${esc(i === 0 && p.startsWith("@") ? "🖧 " + p.slice(1) : p)}</a>`; });
-    if (path) crumbs += `<span style="flex:1"></span><button id="fdel" class="danger">Ordner löschen</button>`;
+    if (path) crumbs += `<span style="flex:1"></span>` + (d.aside_rule && d.aside_rule !== path
+      ? `<span class="muted" title="Regel am Ordner „${esc(d.aside_rule)}“">nicht in der Zeitleiste</span>`
+      : `<button id="faside" title="${d.aside_rule ? "Fotos dieses Ordners wieder in Zeitleiste und Kalender zeigen"
+        : "Fotos dieses Ordners (mit Unterordnern) aus Zeitleiste und Kalender nehmen – auch alles, was später hier dazukommt. Sie liegen dann unter „Beiseite“ und bleiben in Ordnern, Alben, Personen und Suche."}">${d.aside_rule ? "↩ Wieder in die Zeitleiste" : "Nicht in der Zeitleiste"}</button>`) +
+      `<button id="fdel" class="danger">Ordner löschen</button>`;
     page.innerHTML = `<div class="crumbs">${crumbs}</div>` +
       (d.children.length ? `<div class="folders">${d.children.map(c => `
         <a class="folder" href="#/ordner/${encodeURIComponent(c.path)}">
           <img loading="lazy" src="/thumb/${c.cover}" alt=""><div><b>${esc(c.name)}</b><small>${c.total.toLocaleString("de-DE")}</small></div></a>`).join("")}</div>` : "") +
       (path && d.total > d.direct ? `<button class="ghost" id="allin">Alle ${d.total.toLocaleString("de-DE")} Fotos in diesem Ordner und Unterordnern zeigen</button>` : "");
     main.appendChild(page);
+    const fas = $("#faside", page);
+    if (fas) fas.onclick = async () => {
+      const on = !d.aside_rule;
+      if (on && !await confirmBox(`Ordner „${path}“ mit Unterordnern aus Zeitleiste und Kalender nehmen? Die Fotos liegen dann unter „Beiseite“ ` +
+        "(eigene Zeitleiste und Kalender) und bleiben in Ordnern, Alben, Personen und der Suche. Neues in diesem Ordner landet automatisch dort.")) return;
+      const r = await api("/api/aside/folder", { path, on });
+      toast(on ? `${r.count.toLocaleString("de-DE")} Fotos beiseitegelegt` : `${r.count.toLocaleString("de-DE")} Fotos zurück in der Zeitleiste`);
+      loadYears().catch(() => {});
+      route();
+    };
     const fdel = $("#fdel", page);
     if (fdel) fdel.onclick = async () => {
       if (!await confirmBox(`Ordner „${path}“ mit allen Unterordnern löschen? Die ${(d.total || 0).toLocaleString("de-DE")} Fotos/Videos darin ` +
@@ -1368,7 +1540,7 @@ const routes = {
         <button class="full" ${j.running ? "disabled" : ""} title="Ganze iCloud-Bibliothek durchsehen – findet auch alte Fotos, die erst später in iCloud kamen (läuft automatisch alle 30 Tage${a.last_full ? ", zuletzt " + esc(a.last_full.slice(0, 10)) : ""})">Voller Abgleich</button>
         <button class="rm danger">Entfernen</button></div>`).join("")
         || `<p class="muted">Noch kein iCloud-Konto verbunden.</p>`;
-      $$(".acc", page).forEach(el => {
+      $$(".acc", $("#accs", page)).forEach(el => {  // nur die Konten – „Bisherige Importe“ nutzt dieselbe Klasse
         const go = full => async () => {
           const since = $(".since", el) ? $(".since", el).value : "";
           const r = await api("/api/icloud/run", { id: el.dataset.id, since, full });
@@ -1494,10 +1666,12 @@ const routes = {
         Hinweis: Das schützt die Oberfläche – die Dateien selbst auf der Festplatte bleiben unverändert.</p>
         <div class="row">${s.private.password ? `<button id="pwchange">Passwort ändern</button>${s.private.unlocked ? `<button id="pwlock">Jetzt sperren</button>` : `<button id="pwunlock">Entsperren</button>`}`
           : `<button class="primary" id="pwset">Passwort festlegen</button>`}</div></div>
+      <div class="card" id="remotecard" data-fold="remote"><h2>Im Heimnetz bedienen</h2><div class="muted">lädt …</div></div>
       <div class="card" data-fold="lang"><h2>Sprache · Language</h2>
         <select id="langsel" translate="no"><option value="de">Deutsch</option><option value="en">English</option></select></div>
       <div class="card"><h2>Beenden</h2><p class="muted">Vor dem Abziehen der Festplatte FotoArchiv beenden.</p><button id="quit" class="danger">FotoArchiv beenden</button></div>`;
       bindTvSettings(page);
+      bindRemote($("#remotecard", page));
       foldCards(page);
       $("#langsel", page).value = window.LANG || "de";
       $("#langsel", page).onchange = e => window.setLang && window.setLang(e.target.value);
@@ -1939,7 +2113,9 @@ async function showItem() {
   } else if (it.pano && !viewer.flat && window.WebGLRenderingContext) {
     showPano(it, media);
   } else {
-    const src = it.browser_ok ? `/original/${id}` : `/preview/${id}` + (thumbVer[id] ? `?v=${thumbVer[id]}` : "");
+    // Bearbeitung im Namen: sonst zeigt der Browser bis zu einem Tag lang die alte Vorschau aus seinem Speicher
+    const ekey = it.edit ? [...JSON.stringify(it.edit)].reduce((h, ch) => (h * 31 + ch.charCodeAt(0)) | 0, 7) : 0;
+    const src = it.browser_ok ? `/original/${id}` : `/preview/${id}?e=${ekey}` + (thumbVer[id] ? `&v=${thumbVer[id]}` : "");
     media.innerHTML = `<div class="wrap"><img src="${thumbUrl(id)}" alt="" class="lo"></div>`;
     const img = new Image();
     img.onload = () => {
@@ -2114,6 +2290,9 @@ function updateSelbar(grid) {
   selbar.hidden = !selGrid;
   if (!selGrid) return;
   $(".sb-count", selbar).textContent = `${selGrid.sel.size.toLocaleString("de-DE")} ausgewählt`;
+  const ntab = selGrid.context && selGrid.context.nude;  // Heikel: Privat / Nicht heikel
+  $$(".nudebtn", selbar).forEach(b => (b.hidden = !ntab || (b.dataset.tabs ? !b.dataset.tabs.split(" ").includes(ntab)
+    : (b.dataset.act === "nudeyes") !== (ntab === "nein"))));
   const dtab = selGrid.context && selGrid.context.docs;  // Dokumente: Entscheidungs-Knöpfe
   $$(".docbtn", selbar).forEach(b => (b.hidden = !dtab || (b.dataset.act === "docsort" && dtab !== "vorschlag")
     || (b.dataset.act === "dockeep" && dtab === "behalten")));
@@ -2138,6 +2317,19 @@ async function runAction(act, ev) {
     g.clearSel();
     if (reload) route().then(() => currentGrid && currentGrid.restorePlace(place));
   };
+  if (act === "nudepriv") {  // Heikel: markierte privat machen
+    if (!await ensurePassword()) return;
+    await api("/api/items/private", { ids, private: true });
+    return done(`${n.toLocaleString("de-DE")} Fotos sind jetzt privat`, true);
+  }
+  if (act === "nudeknapp" || act === "nudenackt" || act === "nudeok") {  // Heikel: von Hand bestätigt (bleibt so)
+    await api("/api/content/level", { ids, level: act === "nudeknapp" ? 1 : act === "nudenackt" ? 2 : null });
+    return done(`${n.toLocaleString("de-DE")} ${act === "nudeok" ? "bestätigt" : "→ " + (act === "nudeknapp" ? "Knapp bekleidet" : "Nackt") + " (bestätigt)"}`, true);
+  }
+  if (act === "nudeno" || act === "nudeyes") {  // Heikel: Fehltreffer bzw. zurückholen
+    await api("/api/content/notnude", { ids, on: act === "nudeno" });
+    return done(act === "nudeno" ? `${n.toLocaleString("de-DE")} als „nicht heikel“ markiert` : `${n.toLocaleString("de-DE")} wieder unter Heikel`, true);
+  }
   if (act === "del") {
     const r = await trashItems(ids);
     if (!r) return;
@@ -2199,6 +2391,12 @@ async function runAction(act, ev) {
       ["unfav", "☆ Favorit entfernen"],
       ["rotr", "⟳ Nach rechts drehen"], ["rotl", "⟲ Nach links drehen"],
       ["date", "Datum ändern …"],
+      "-",
+      ctx.trash ? null : ["autoedit", "✨ Auto verbessern"],
+      ctx.trash || n !== 1 ? null : ["copyedit", "Bearbeitung kopieren"],
+      ctx.trash || !state.editClip ? null : ["pasteedit", "Bearbeitung einfügen"],
+      ctx.trash ? null : ["resetedit", "Bearbeitung zurücksetzen (Original)"],
+      "-",
       ["rmperson", "Person entfernen …"],
       ["rmtag", "Stichwort entfernen …"],
       ctx.trash ? null : ["todoc", "📄 Zu den Dokumenten …"],
@@ -2209,6 +2407,7 @@ async function runAction(act, ev) {
       ctx.event && n === 1 ? ["cevent", "Als Titelbild des Ereignisses"] : null,
       ctx.person && n === 1 ? ["cperson", `Als Titelbild von ${ctx.personName}`] : null,
       n === 1 && !ctx.trash ? ["cmonth", "Als Titelbild des Monats (Kalender)"] : null,
+      ctx.trash || ctx.hidden ? null : ctx.aside ? ["unaside", "↩ Zurück in die Zeitleiste"] : ["aside", "Aus der Zeitleiste nehmen (Beiseite)"],
       ctx.trash ? null : ctx.hidden ? ["unhide", "Wieder einblenden"] : ["hide", "Ausblenden (nicht löschen)"],
       ctx.trash ? ["restore", "Wiederherstellen"] : ["del", "🗑 In den Papierkorb …"],
       ctx.trash ? ["purge", "Endgültig löschen …"] : null,
@@ -2248,6 +2447,26 @@ async function runAction(act, ev) {
         g.layout();
       }
       else if (m === "date") { if (await actDate(ids)) done("Datum geändert", true); }
+      else if (m === "autoedit" || m === "resetedit" || m === "copyedit" || m === "pasteedit") {
+        if (m === "copyedit") {  // Bearbeitung eines Fotos merken, um sie auf andere zu übertragen
+          const it = await api(`/api/item/${ids[0]}`);
+          if (!it.edit) return toast("Dieses Foto ist nicht bearbeitet");
+          state.editClip = it.edit;
+          return done("Bearbeitung kopiert – andere Fotos markieren und „Bearbeitung einfügen“");
+        }
+        if (m === "resetedit" && !confirm(`Bearbeitung bei ${n.toLocaleString("de-DE")} Fotos entfernen? Die Originale sind ohnehin unverändert.`)) return;
+        const label = { autoedit: "✨ Auto verbessern", resetedit: "Zurücksetzen", pasteedit: "Bearbeitung einfügen" }[m];
+        let k = 0, ok = 0, skip = 0;
+        for (let i = 0; i < ids.length; i += 10) {  // kleine Pakete: Fortschritt sichtbar, Server bleibt bedienbar
+          const part = ids.slice(i, i + 10);
+          toast(`${label}: ${(i).toLocaleString("de-DE")} / ${n.toLocaleString("de-DE")} …`, 60000);
+          const r = await api("/api/items/edit", { ids: part, action: { autoedit: "auto", resetedit: "reset", pasteedit: "paste" }[m], edit: state.editClip });
+          ok += r.done; skip += r.skipped; k += part.length;
+          part.forEach(id => (thumbVer[id] = Date.now()));
+        }
+        done(`${label}: ${ok.toLocaleString("de-DE")} Fotos${skip ? ` (${skip} übersprungen – Videos/gesperrt)` : ""} · Originale bleiben unverändert`);
+        g.layout();
+      }
       else if (m === "rmperson") {
         const name = await askName("Welche Person entfernen?", "", true);
         const pers = state.persons.find(x => x.name.toLowerCase() === (name || "").toLowerCase());
@@ -2286,6 +2505,11 @@ async function runAction(act, ev) {
         if (m === "unpriv" && !state.priv.unlocked && !await unlockDialog()) return;
         await api("/api/items/private", { ids, private: m === "priv" });
         done(m === "priv" ? `${n} Fotos sind jetzt privat` : `${n} Fotos sind nicht mehr privat`, true);
+      }
+      else if (m === "aside" || m === "unaside") {
+        const r = await api("/api/aside", { ids, on: m === "aside" });
+        loadYears().catch(() => {});
+        done(m === "aside" ? `${r.count} beiseitegelegt (Seitenleiste › Beiseite)` : `${r.count} zurück in der Zeitleiste`, true);
       }
       else if (m === "hide" || m === "unhide") {
         await api("/api/items/hide", { ids, hidden: m === "hide" });
@@ -3175,11 +3399,11 @@ bindFilter("#f-dups", "dups", "checked");
 bindFilter("#f-stacks", "stacks");
 bindFilter("#f-sort", "sort");
 $("#f-reset").onclick = () => {
-  Object.assign(state.filters, { from: "", to: "", kind: "", camera: "", fav: false, nodate: false, dups: false, stacks: "", sort: "desc" });
+  Object.assign(state.filters, { from: "", to: "", kind: "", camera: "", fav: false, nodate: false, dups: false, stacks: "", sort: "asc" });
   state.cameraLabel = "";
   ["#f-from", "#f-to", "#f-kind", "#f-stacks"].forEach(s => ($(s).value = ""));
   ["#f-fav", "#f-nodate", "#f-dups"].forEach(s => ($(s).checked = false));
-  $("#f-sort").value = "desc";
+  $("#f-sort").value = "asc";
   markFilterBtn();
   runSearch();
 };
@@ -3209,6 +3433,14 @@ $("#camsw").onclick = async e => {
   $$("[data-cam]", p).forEach(x => x.onclick = () => { closePopover(); setCamera(x.dataset.cam, x.dataset.l); });
 };
 
+// Kennzeichen auf Videokacheln: Länge, Live Photos mit ◎
+function vidBadge(s, live) {
+  const t = s == null ? "" : s >= 3600 ? `${Math.floor(s / 3600)}:${String(Math.floor(s / 60) % 60).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`
+    : `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  return live ? `<span class="vid live" title="Live Photo – kurze Bewegung zu einem iPhone-Foto">◎ ${t}</span>`
+    : `<span class="vid">▶ ${t}</span>`;
+}
+
 // Umschalter Alle | Fotos | Videos: lädt die aktuelle Ansicht (Album, Ordner …) neu, statt zur Zeitleiste zu springen
 $$("#kindsw [data-kind]").forEach(b => b.onclick = () => {
   state.filters.kind = b.dataset.kind;
@@ -3219,7 +3451,7 @@ $$("#kindsw [data-kind]").forEach(b => b.onclick = () => {
 function markFilterBtn() {
   const f = state.filters;
   $$("#kindsw [data-kind]").forEach(b => b.classList.toggle("on", b.dataset.kind === (f.kind === "raw" ? "photo" : f.kind || "")));
-  const n = [f.from, f.to, f.kind, f.fav, f.nodate, f.dups, f.stacks, f.sort !== "desc"].filter(Boolean).length;
+  const n = [f.from, f.to, f.kind, f.fav, f.nodate, f.dups, f.stacks, f.sort !== "asc"].filter(Boolean).length;
   const cb = $("#camsw");
   cb.innerHTML = f.camera ? `📷 ${esc(state.cameraLabel || "Kamera")} <span class="x" title="Kamerafilter aufheben">✕</span>` : "📷 Kamera ▾";
   cb.classList.toggle("on", !!f.camera);
@@ -3239,6 +3471,27 @@ async function loadYears() {
   });
 }
 
+// ---------------------------------------------- Heikle Fotos (Bildinhalt) ----
+// Schalter neben „Privat“: knapp bekleidete/nackte Fotos (content.py) in Zeitleiste/Kalender zeigen oder ausblenden
+function setHot(s) {
+  const b = $("#hotbtn");
+  if (!s || !b) return;
+  b.hidden = !s.count;
+  b.textContent = s.show ? "👁 Heikle sichtbar" : "👙 Heikle ausgeblendet";
+  b.title = (s.show ? "Klicken, um heikle Fotos (nackt, Bikini/Unterwäsche) aus Zeitleiste und Kalender auszublenden"
+    : "Klicken, um heikle Fotos in Zeitleiste und Kalender wieder zu zeigen") + " – Alben, Ordner, Suche und „Bildinhalt“ zeigen sie immer; auf dem Fernseher (DLNA) nie";
+  b.classList.toggle("open", !!s.show);
+  state.hot = s;
+}
+$("#hotbtn").onclick = async () => {
+  const on = !(state.hot && state.hot.show);
+  await api("/api/content/show", { on });
+  setHot(Object.assign({}, state.hot, { show: on }));
+  toast(on ? "Heikle Fotos werden in der Zeitleiste gezeigt" : "Heikle Fotos sind in Zeitleiste und Kalender ausgeblendet");
+  loadYears().catch(() => {});
+  route();
+};
+
 // ------------------------------------------------------------ Indexstatus ----
 let pollTimer = null;
 async function pollStatus(force) {
@@ -3247,6 +3500,7 @@ async function pollStatus(force) {
   try { s = await api("/api/status"); } catch { pollTimer = setTimeout(pollStatus, 10000); return; }
   const el = $("#indexstatus"), pr = s.progress;
   setPriv(s.private);
+  setHot(s.sensitive);
   if (pr.running || s.recompute) {
     const pct = pr.total ? Math.round(100 * pr.done / pr.total) : 0;
     el.hidden = false;
@@ -3336,6 +3590,35 @@ $("#navset .navhead").onclick = () => {
 };
 
 // Einstellungsseiten: Karten mit data-fold auf-/zuklappbar; zugeklappt nur Titel + Kurzhilfe (Zustand gemerkt)
+// Einstellungen › „Im Heimnetz bedienen“ (remote.py): andere Rechner mit Passwort, nur Heimnetz
+async function bindRemote(card) {
+  const box = $("div", card);
+  const r = await api("/api/remote");
+  if (r.client) {
+    box.innerHTML = `<p class="muted">Du bist über das Heimnetz angemeldet. Einstellungen dazu gibt es nur am FotoArchiv-Rechner selbst.</p>
+      <button id="rmout">Auf diesem Gerät abmelden</button>`;
+    $("#rmout", box).onclick = async () => { await fetch("/api/remote-logout", { method: "POST" }); location.reload(); };
+    return;
+  }
+  box.innerHTML = `<p class="muted">Andere Computer, Tablets oder Handys im selben WLAN/Netz können FotoArchiv dann ganz normal im Browser bedienen –
+      nach Eingabe eines eigenen Passworts. Aus dem Internet ist es nicht erreichbar. Private Fotos muss man dort selbst entsperren.
+      Beenden, Fotoordner wechseln und diese Einstellung gehen nur hier am Rechner.</p>
+    ${r.on && r.url ? `<p>Adresse für die anderen Geräte: <b><a href="${esc(r.url)}" target="_blank" translate="no">${esc(r.url)}</a></b>
+      <span class="muted">· ${r.devices} Gerät(e) angemeldet</span></p>` : ""}
+    <div class="row"><label><input type="checkbox" id="rmon" ${r.on ? "checked" : ""}> Im Heimnetz bedienen</label></div>
+    <div class="row"><input type="password" id="rmpw" autocomplete="new-password" placeholder="${r.password ? "Neues Passwort (mind. 6 Zeichen)" : "Passwort festlegen (mind. 6 Zeichen)"}" style="width:240px">
+      <button id="rmpwok">${r.password ? "Passwort ändern" : "Passwort festlegen"}</button>
+      ${r.devices ? `<button id="rmall">Alle Geräte abmelden</button>` : ""}</div>
+    ${r.on ? `<p class="muted">Fragt Windows beim ersten Mal nach der Firewall: „Private Netzwerke“ erlauben.</p>` : ""}`;
+  const save = async b => {
+    try { await api("/api/remote/settings", b); bindRemote(card); return true; }
+    catch (e) { toast(e.message, 6000); bindRemote(card); return false; }
+  };
+  $("#rmon", box).onchange = e => save({ on: e.target.checked }).then(ok => ok && toast(e.target.checked ? "Im Heimnetz erreichbar" : "Nur noch auf diesem Rechner"));
+  $("#rmpwok", box).onclick = () => save({ password: $("#rmpw", box).value }).then(ok => ok && toast("Passwort gespeichert – andere Geräte müssen sich neu anmelden"));
+  if ($("#rmall", box)) $("#rmall", box).onclick = () => save({ logout_all: true }).then(ok => ok && toast("Alle Geräte abgemeldet"));
+}
+
 const FOLD_HELP = {
   inbox: "Dateien einfach in einen Ordner legen – FotoArchiv holt sie von selbst ab.",
   zip: "Einmalig einen Ordner, eine SD-Karte oder ZIP-Dateien (z. B. Google Takeout) übernehmen.",
@@ -3348,6 +3631,7 @@ const FOLD_HELP = {
   folders: "Welche Ordner durchsucht werden; Doppelte und RAW ausblenden.",
   tv: "Fotos und Diashows auf dem Fernseher, Samsung The Frame.",
   private: "Passwort für private Fotos, Alben und Ereignisse.",
+  remote: "FotoArchiv von anderen Geräten im Heimnetz bedienen – mit Passwort.",
   lang: "Sprache der Oberfläche – Deutsch oder Englisch.",
   s3: "Alles auf S3 sichern – läuft im Hintergrund, nur Neues wird hochgeladen.",
   targets: "S3-Speicher einrichten (Amazon S3, MinIO, StorageGRID …).",
@@ -3389,6 +3673,7 @@ const personsReady = loadPersons().catch(() => []);
   await api("/api/backup").then(c => { state.hasS3 = c.targets.length > 0; }).catch(() => {});  // vor dem ersten Routen
   pollBkBar();
   api("/api/panos/count").then(r => { $('#kindsw [data-kind="pano"]').hidden = !r.count; }).catch(() => {});  // 360°-Umschalter
+  api("/api/live/count").then(r => { $('#kindsw [data-kind="live"]').hidden = !r.count && !r.scan.running; }).catch(() => {});
   // erst nach video.js/backup.js routen – sonst kennt der direkte Aufruf von #/video oder #/sicherung die Seite noch nicht
   if (document.readyState === "loading") document.addEventListener("DOMContentLoaded", route, { once: true }); else route();
   const s = await pollStatus();

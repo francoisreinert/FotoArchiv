@@ -150,7 +150,9 @@ def build(target, zip_it=True):
     shutil.copytree(os.path.join(BASE, "app"), os.path.join(out, "app"), ignore=ign)
     for f in ("static/backup.js", "static/i18n_en.js", "server.py", "backup.py"):
         strip_local(os.path.join(out, "app", *f.split("/")))
-    shutil.copytree(os.path.join(BASE, "models"), os.path.join(out, "models"))
+    # Bildinhalt-Modelle (~620 MB) nicht mitgeben – „Bildinhalt › Einrichten“ lädt sie (content.download)
+    shutil.copytree(os.path.join(BASE, "models"), os.path.join(out, "models"),
+                    ignore=shutil.ignore_patterns("clip", "nudenet_*.onnx", "*.part"))
     shutil.copytree(os.path.join(BASE, "runtime"), os.path.join(out, "runtime"))
     os.makedirs(os.path.join(out, "tools"))
     for f in os.listdir(os.path.join(BASE, "tools")):
