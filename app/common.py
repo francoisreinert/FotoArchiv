@@ -355,6 +355,11 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
         con.execute("CREATE INDEX IF NOT EXISTS items_vid ON items(id, live, duration) WHERE kind = 'video'")
         # Heikel (content.py): nur die wenigen Treffer im Index
         con.execute("CREATE INDEX IF NOT EXISTS items_nude ON items(nude, taken, id) WHERE nude <> 0")
+        # Zähler der Bildinhalt-Seite (content.counts) ohne die ganze Tabelle von der Platte zu lesen
+        con.execute("CREATE INDEX IF NOT EXISTS items_nude_cnt ON items(nude, nude_fix, priv_eff, hidden, kind, raw_of, dup_of) "
+                    "WHERE nude > 0")
+        con.execute("CREATE INDEX IF NOT EXISTS items_nude_todo2 ON items(nude, hidden, kind, raw_of, dup_of) "
+                    "WHERE nude IS NULL")
         # nude_fix = 1: Stufe vom Nutzer gesetzt (nicht heikel / knapp / nackt) – Erkennung ändert sie nicht mehr
         con.execute("UPDATE items SET nude_fix = 1 WHERE nude <> 0 AND nude = -1 AND nude_fix IS NULL")
         if "private" not in {r[1] for r in con.execute("PRAGMA table_info(events)")}:

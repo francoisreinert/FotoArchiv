@@ -631,7 +631,13 @@ const routes = {
   // Bildinhalt: freie Suche nach dem, was zu sehen ist (content.py, lokal) und „Heikel“ zum Entscheiden
   async inhalt(tab) {
     setSearchScope(null);
+    const hash = location.hash;
+    if (!main.querySelector(".page h1")?.textContent.includes("Bildinhalt")) {
+      clearMain();
+      main.innerHTML = `<div class="page"><h1>🔍 Bildinhalt <small>lädt …</small></h1></div>`;
+    }
     const st = await api("/api/content");
+    if (location.hash !== hash) return;  // inzwischen woanders hingeklickt
     const qs = new URLSearchParams(location.hash.split("?")[1] || "");
     tab = tab || "suche";
     const num = n => (n || 0).toLocaleString("de-DE");

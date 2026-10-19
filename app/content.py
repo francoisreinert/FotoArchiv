@@ -134,6 +134,7 @@ def db():
     con.execute("PRAGMA journal_mode=WAL")
     con.execute("CREATE TABLE IF NOT EXISTS vec(id INTEGER PRIMARY KEY, v BLOB, s REAL)")
     con.execute("CREATE TABLE IF NOT EXISTS nude(id INTEGER PRIMARY KEY, cls TEXT)")
+    con.execute("CREATE INDEX IF NOT EXISTS vec_s ON vec(s)")  # COUNT(*) liest dann nicht alle Vektoren (~230 MB)
     return con
 
 
@@ -244,14 +245,15 @@ def counts(con):
     finally:
         c.close()
     # wie die Listen: ohne Duplikat-Kopien (folgen dem Hauptfoto); private extra (Haken „auch schon private zeigen“)
-    r = dict(con.execute("SELECT (COALESCE(nude, -9) * 10 + (nude_fix IS NOT NULL AND nude > 0)) * 2 "
-                         "+ (COALESCE(priv_eff,0) != 0 AND nude_fix IS NULL), COUNT(*) FROM items "
-                         "WHERE COALESCE(hidden,0) != 2 AND kind IN ('photo','raw','video') AND raw_of IS NULL "
-                         "AND dup_of IS NULL GROUP BY 1").fetchall())
+    # zwei Teile über kleine Teilindizes (items_nude_cnt / items_nude_todo) – sonst liest es alle Zeilen
+    flt = "AND COALESCE(hidden,0) != 2 AND kind IN ('photo','raw','video') AND raw_of IS NULL AND dup_of IS NULL"
+    r = dict(con.execute("SELECT (nude * 10 + (nude_fix IS NOT NULL)) * 2 + (COALESCE(priv_eff,0) != 0 AND nude_fix IS NULL), "
+                         "COUNT(*) FROM items WHERE nude > 0 " + flt + " GROUP BY 1").fetchall())
+    r[-180] = con.execute("SELECT COUNT(*) FROM items WHERE nude IS NULL " + flt).fetchone()[0]
     # nackt/knapp = Vorschläge, noch zu entscheiden; ok = von dir bestätigt
     return {"done": done, "nackt": r.get(40, 0), "knapp": r.get(20, 0), "nackt_priv": r.get(41, 0),
             "knapp_priv": r.get(21, 0), "ok": r.get(42, 0) + r.get(22, 0),
-            "todo": r.get(-180, 0) + r.get(-179, 0),
+            "todo": r.get(-180, 0),
             "available": available(), "missing": missing(), "runtime": _ort() is not None}
 
 
