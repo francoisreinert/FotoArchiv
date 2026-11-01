@@ -617,6 +617,7 @@ window.I18N_EN = {
 "Fotos erstellen – Name:": "photos – name:",
 "Fotos gefunden": "photos found",
 "Fotos geprüft": "photos checked",
+"Fotos in diesem Kartenbereich": "Photos in this map area",
 "Fotos in diesem Ordner und Unterordnern zeigen": "Show photos in this folder and subfolders",
 "Fotos markieren und unten „🔒 Privat“ oder „Nicht heikel“ wählen. Private Fotos erscheinen nie auf dem Fernseher, in iCloud-Uploads oder Web-Freigaben.": "Select photos and choose “🔒 Private” or “Not sensitive” below. Private photos never appear on the TV, in iCloud uploads or web shares.",
 "Fotos mit Ort": "Photos with location",
@@ -737,6 +738,7 @@ window.I18N_EN = {
 "In der Sicherung löschen": "Delete from backup",
 "In der Sicherung löschen …": "Delete from backup …",
 "In der Zeitleiste zeigen": "Show in timeline",
+"In diesem Bereich gibt es (mit den aktuellen Filtern) keine Fotos.": "There are no photos in this area (with the current filters).",
 "In diesem Monat gibt es keine Fotos.": "There are no photos in this month.",
 "In ein Videoprojekt übernehmen": "Add to a video project",
 "In „{1}“ übernommen – 🎬+ fügt ab jetzt dort ein": "Added to “{1}” – 🎬+ now adds there",
@@ -1291,6 +1293,7 @@ window.I18N_EN = {
 "Zum Beenden dieses Fenster schließen (oder Strg+C).": "To quit, close this window (or Ctrl+C).",
 "Zum Videoprojekt hinzufügen (Shift+Klick: anderes Projekt)": "Add to video project (Shift+click: other project)",
 "Zurück (←)": "Back (←)",
+"Zurück zur Karte (gleiche Stelle)": "Back to the map (same spot)",
 "Zurücksetzen": "Reset",
 "Zusammenfügen und Ton": "Joining and audio",
 "Zusammenführen": "Merge",
@@ -1821,5 +1824,6 @@ window.I18N_EN = {
 "🗑 In den Papierkorb": "🗑 Move to Trash",
 "🗑 In den Papierkorb …": "🗑 Move to Trash …",
 "🗑 Löschen": "🗑 Delete",
-"🗑 Papierkorb": "🗑 Trash"
+"🗑 Papierkorb": "🗑 Trash",
+"🗺 Zurück zur Karte": "🗺 Back to map"
 };

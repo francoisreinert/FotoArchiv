@@ -1316,14 +1316,15 @@ const routes = {
     }
     const pts = await api("/api/map?" + filterParams());
     const map = window._map = L.map("map", { preferCanvas: true }).setView([50, 10], 5);
+    map.on("moveend", () => { state.mapView = { c: map.getCenter(), z: map.getZoom() }; });  // beim Zurückkommen gleiche Stelle
     L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
-    const cl = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50 });
+    // Cluster anklicken = alle Fotos dieses Bereichs als Fotoansicht (scrollen, Filter, Diashow); näher heran geht per Zoom
+    const cl = L.markerClusterGroup({ chunkedLoading: true, maxClusterRadius: 50, zoomToBoundsOnClick: false, spiderfyOnMaxZoom: false });
     const ids = pts.map(p => p[0]);
     cl.addLayers(pts.map((p, i) => { const m = L.marker([p[1], p[2]]); m.idx = i; return m; }));
     cl.on("clusterclick", e => {
-      if (map.getZoom() < map.getMaxZoom() - 1 && e.layer.getAllChildMarkers().length > 9) return;
-      const ms = e.layer.getAllChildMarkers();
-      showMapPopup(e.layer.getLatLng(), ms.map(m => m.idx));
+      const b = e.layer.getBounds(), d = 0.00002, f = x => x.toFixed(5);
+      location.hash = `#/ort?b=${[f(b.getSouth() - d), f(b.getWest() - d), f(b.getNorth() + d), f(b.getEast() + d)].join(",")}`;
     });
     cl.on("click", e => showMapPopup(e.layer.getLatLng(), [e.layer.idx]));
     function showMapPopup(ll, idxs) {
@@ -1334,8 +1335,18 @@ const routes = {
       pop.getElement().querySelectorAll("img").forEach(img => img.onclick = () => openViewer(sub, +img.dataset.k));
     }
     map.addLayer(cl);
-    if (pts.length) map.fitBounds(cl.getBounds(), { maxZoom: 12 });
+    if (state.mapView) map.setView(state.mapView.c, state.mapView.z);
+    else if (pts.length) map.fitBounds(cl.getBounds(), { maxZoom: 12 });
     main.insertAdjacentHTML("beforeend", `<div style="position:absolute;z-index:500;left:60px;top:12px;background:var(--panel);padding:6px 12px;border-radius:8px">${pts.length.toLocaleString("de-DE")} Fotos mit Ort</div>`);
+  },
+  async ort() {  // Fotos eines Kartenbereichs (Cluster angeklickt)
+    const b = new URLSearchParams(location.hash.split("?")[1] || "").get("b") || "";
+    if (b.split(",").length !== 4) { location.hash = "#/karte"; return; }
+    setSearchScope(null);
+    await showGrid("Fotos in diesem Kartenbereich", { bbox: b, geo: 1 }, {
+      headExtra: `<a href="#/karte"><button class="ghost" title="Zurück zur Karte (gleiche Stelle)">🗺 Zurück zur Karte</button></a>`,
+      empty: "In diesem Bereich gibt es (mit den aktuellen Filtern) keine Fotos.",
+    });
   },
   async import() {
     clearMain();

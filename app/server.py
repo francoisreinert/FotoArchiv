@@ -224,6 +224,10 @@ def build_where(p):
         args += ["%04d-%02d" % (y, m), "%04d-%02d" % ((y + 1, 1) if m == 12 else (y, m + 1))]
     if p.get("geo") == "1":
         where.append("i.lat IS NOT NULL")
+    if p.get("bbox"):  # Kartenbereich süd,west,nord,ost (Cluster auf der Karte)
+        s_, w_, n_, e_ = [float(x) for x in p["bbox"].split(",")]
+        where.append("i.lat BETWEEN ? AND ? AND i.lon BETWEEN ? AND ?")
+        args += [s_, n_, w_, e_]
     folder = p.get("folder")
     if folder is not None and folder != "":
         if p.get("recursive") == "1":

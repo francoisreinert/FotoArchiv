@@ -54,7 +54,8 @@ FUNKTIONEN
                - "Unbekannte Gesichter benennen": ähnliche Gesichter ohne Namen in Gruppen
                - Im Betrachter Taste G: Gesichtsrahmen anklicken zum Benennen/Korrigieren
                - Nach vielen Änderungen: "Erkennung aktualisieren"
-  Karte        Fotos mit GPS auf der Karte (braucht Internet für die Kartenbilder)
+  Karte        Fotos mit GPS auf der Karte (braucht Internet für die Kartenbilder). Klick auf einen Kreis mit
+               Zahl zeigt alle Fotos dieses Bereichs zum Durchscrollen; näher heran mit dem Mausrad/Zoom.
   Favoriten    Stern im Betrachter (Taste F); Bewertungen ab 4 Sternen (z. B. aus Lightroom) zählen auch
   Vollbild     im Betrachter ⛶, Taste V oder Doppelklick aufs Foto; ← → blättert weiter, Esc beendet
   Duplikate    Gleiche Fotos/Videos nebeneinander; die bessere Datei behalten, Rest in den Papierkorb
