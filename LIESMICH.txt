@@ -2,6 +2,8 @@ FotoArchiv – Fotoverwaltung im Browser, ohne Cloud und ohne Abo
 ===============================================================
 
 STARTEN
+  Die heruntergeladene ZIP zuerst entpacken (Windows: Rechtsklick > "Alle extrahieren ...") –
+  direkt aus der geöffneten ZIP heraus startet FotoArchiv nicht.
   Den Ordner "FotoArchiv" an einen festen Platz legen – z. B. "Dokumente" oder auf die externe
   Festplatte mit den Fotos (dann funktioniert alles auch an anderen Computern).
 

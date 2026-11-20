@@ -24,6 +24,16 @@ CMD_SHORTCUT = r"""@echo off
 rem Legt FotoArchiv mit Icon auf den Desktop und ins Startmenue.
 setlocal
 set "FA_HERE=%~dp0"
+if not exist "%FA_HERE%runtime\python-win-x64.tar.gz" (
+  echo.
+  echo FotoArchiv wurde nicht vollstaendig entpackt.
+  echo Bitte die ZIP-Datei nicht nur oeffnen, sondern zuerst entpacken:
+  echo Rechtsklick auf FotoArchiv.zip, "Alle extrahieren ..." waehlen und dann
+  echo im entpackten Ordner diese Datei erneut doppelklicken.
+  echo.
+  pause
+  exit /b 1
+)
 powershell -NoProfile -ExecutionPolicy Bypass -Command "$h=$env:FA_HERE; $ws=New-Object -ComObject WScript.Shell; foreach($d in @([Environment]::GetFolderPath('Desktop'), [Environment]::GetFolderPath('Programs'))){ $l=$ws.CreateShortcut((Join-Path $d 'FotoArchiv.lnk')); $l.TargetPath=(Join-Path $h 'FotoArchiv starten (Windows).cmd'); $l.WorkingDirectory=$h; $l.IconLocation=(Join-Path $h 'FotoArchiv.ico'); $l.WindowStyle=7; $l.Description='FotoArchiv - Fotos verwalten'; $l.Save() }" || goto fail
 echo.
 echo FotoArchiv liegt jetzt auf dem Desktop und im Startmenue.
@@ -56,6 +66,8 @@ PLIST = """<?xml version="1.0" encoding="UTF-8"?>
 """
 
 START_NEU = """STARTEN
+  Die heruntergeladene ZIP zuerst entpacken (Windows: Rechtsklick > "Alle extrahieren ...") –
+  direkt aus der geöffneten ZIP heraus startet FotoArchiv nicht.
   Den Ordner "FotoArchiv" an einen festen Platz legen – z. B. "Dokumente" oder auf die externe
   Festplatte mit den Fotos (dann funktioniert alles auch an anderen Computern).
 

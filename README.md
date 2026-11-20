@@ -52,7 +52,7 @@ or open `http://127.0.0.1:8765/?lang=en`.)*
 
 ## Download and start
 
-1. Download `FotoArchiv.zip` from **[Releases](../../releases)** and unzip it.
+1. Download `FotoArchiv.zip` from **[Releases](../../releases)** and unzip it (right-click › *Extract All…* – starting it from inside the opened ZIP does not work).
    Put the `FotoArchiv` folder in a permanent place (e.g. Documents or your photo drive).
 2. **Windows:** double-click `Verknüpfung anlegen (Windows).cmd` (creates desktop + start menu shortcuts) or
    start `FotoArchiv starten (Windows).cmd` directly.
@@ -149,7 +149,7 @@ Oberfläche auf **Deutsch und Englisch**.
 
 ### Herunterladen und starten
 
-1. Unter **[Releases](../../releases)** die Datei `FotoArchiv.zip` herunterladen und entpacken.
+1. Unter **[Releases](../../releases)** die Datei `FotoArchiv.zip` herunterladen und entpacken (Rechtsklick › *Alle extrahieren …* – direkt aus der geöffneten ZIP heraus startet es nicht).
    Den Ordner `FotoArchiv` an einen festen Platz legen (z. B. Dokumente oder die Foto-Festplatte).
 2. **Windows:** `Verknüpfung anlegen (Windows).cmd` doppelklicken (Desktop + Startmenü) oder direkt
    `FotoArchiv starten (Windows).cmd`.

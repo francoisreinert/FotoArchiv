@@ -3,6 +3,16 @@ rem FotoArchiv starten (Windows). Beim ersten Start auf einem Rechner wird die
 rem Laufzeitumgebung einmalig nach %%LOCALAPPDATA%%\FotoArchiv entpackt (ca. 1 Minute).
 setlocal
 set "HERE=%~dp0"
+if not exist "%HERE%runtime\python-win-x64.tar.gz" (
+  echo.
+  echo FotoArchiv wurde nicht vollstaendig entpackt.
+  echo Bitte die ZIP-Datei nicht nur oeffnen, sondern zuerst entpacken:
+  echo Rechtsklick auf FotoArchiv.zip, "Alle extrahieren ..." waehlen und dann
+  echo im entpackten Ordner "FotoArchiv starten (Windows).cmd" doppelklicken.
+  echo.
+  pause
+  exit /b 1
+)
 set /p RTVER=<"%HERE%runtime\VERSION"
 set "RT=%LOCALAPPDATA%\FotoArchiv\runtime-%RTVER%"
 set "PY=%RT%\python\python.exe"
