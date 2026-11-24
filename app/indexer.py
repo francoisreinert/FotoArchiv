@@ -79,7 +79,8 @@ def scan(con, folders):
     new_rows, changed = [], []
     count = 0
     for top in folders:
-        top_abs = to_abs(top)
+        only_files = top == common.ROOT_FILES  # nur Dateien direkt im Fotoordner, Unterordner kommen einzeln
+        top_abs = common.LIB_ROOT if only_files else to_abs(top)
         if not os.path.isdir(top_abs):
             continue
         stack = [top_abs]
@@ -98,7 +99,7 @@ def scan(con, folders):
                     continue
                 try:
                     if e.is_dir(follow_symlinks=False):
-                        if e.name.lower() not in SKIP_DIRS:
+                        if not only_files and e.name.lower() not in SKIP_DIRS:
                             stack.append(e.path)
                     else:
                         files[e.name.lower()] = e
@@ -140,9 +141,9 @@ def scan(con, folders):
     _insert(con, new_rows)
     con.executemany("UPDATE items SET size=?, mtime=?, xmp_mtime=?, proc_ver=0 WHERE id=?", changed)
     # Entfernte Dateien löschen (nur in Ordnern, die gerade erreichbar sind)
-    roots = [f + "/" for f in folders if os.path.isdir(to_abs(f))]
-    gone = [(i,) for p, (i, *_x) in known.items() if p not in seen and any(p.startswith(r) for r in roots)]
-    excluded = [(i,) for p, (i, *_x) in known.items() if not any(p.startswith(f + "/") for f in folders)]
+    roots = [f for f in folders if os.path.isdir(common.LIB_ROOT if f == common.ROOT_FILES else to_abs(f))]
+    gone = [(i,) for p, (i, *_x) in known.items() if p not in seen and any(common.in_folder(p, r) for r in roots)]
+    excluded = [(i,) for p, (i, *_x) in known.items() if not any(common.in_folder(p, f) for f in folders)]
     # während des Suchens in den Papierkorb gelegte Fotos nicht mitlöschen
     trashed = {r[0] for r in con.execute("SELECT id FROM items WHERE hidden=2")}
     remove_items(con, [g[0] for g in gone + excluded if g[0] not in trashed])

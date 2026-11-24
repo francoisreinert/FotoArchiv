@@ -192,16 +192,29 @@ def save_config(cfg):
     os.replace(tmp, CONFIG_PATH)
 
 
+ROOT_FILES = "."  # Eintrag in included_folders: Dateien direkt im Fotoordner (ohne Unterordner)
+
+
 def included_folders(cfg=None):
     """Oberste Ordner, die eingelesen werden – plus alle weiteren Fotoordner ("@Name"), auch wenn sie gerade
-    nicht erreichbar sind: das Einlesen überspringt sie dann, ihre Fotos bleiben aber im Katalog."""
+    nicht erreichbar sind: das Einlesen überspringt sie dann, ihre Fotos bleiben aber im Katalog.
+    Bei selbst gewähltem Fotoordner zählen auch Dateien, die direkt darin liegen (ROOT_FILES)."""
     cfg = cfg or load_config()
     if cfg.get("folders"):
         main = [f for f in cfg["folders"] if os.path.isdir(to_abs(f))]
     else:
         excl = {x.lower() for x in cfg.get("excluded_folders") or []}
         main = [f for f in top_level_folders() if f.lower() not in excl]
+    if cfg.get("library_root"):
+        main = [ROOT_FILES] + main
     return main + [SOURCE_PREFIX + n for n in SOURCES]
+
+
+def in_folder(rel, top):
+    """Liegt der Katalogpfad rel in diesem Eintrag von included_folders?"""
+    if top == ROOT_FILES:
+        return "/" not in rel and not rel.startswith(SOURCE_PREFIX)
+    return rel.startswith(top + "/")
 
 
 SCHEMA = """

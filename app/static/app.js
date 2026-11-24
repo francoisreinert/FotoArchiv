@@ -1108,14 +1108,14 @@ const routes = {
       page.remove();
       await showGrid(parts[parts.length - 1], { folder: path, recursive: "1" }, { context: { folder: path, folderName: parts[parts.length - 1] } });
     };
-    if (path && d.direct) {
-      const res = await api("/api/query?" + filterParams({ folder: path }));
+    if (d.direct) {  // oberste Ebene: Fotos, die direkt im Fotoordner liegen
+      const res = await api("/api/query?" + filterParams(path ? { folder: path } : { folder_root: "1" }));
       const head = document.createElement("div");
       head.className = "gridhead";
-      head.innerHTML = `<span class="count">${res.total.toLocaleString("de-DE")} Dateien in diesem Ordner</span>${zoomButtons()}`;
+      head.innerHTML = `<span class="count">${res.total.toLocaleString("de-DE")} ${path ? "Dateien in diesem Ordner" : "Dateien direkt im Fotoordner"}</span>${zoomButtons()}`;
       main.appendChild(head);
       bindZoom(head);
-      currentGrid = new VGrid(main, res, { context: { folder: path, folderName: parts[parts.length - 1] } });
+      currentGrid = new VGrid(main, res, path ? { context: { folder: path, folderName: parts[parts.length - 1] } } : {});
     } else if (!d.children.length) {
       page.insertAdjacentHTML("beforeend", `<div class="empty">Keine Ordner im Katalog.</div>`);
     }

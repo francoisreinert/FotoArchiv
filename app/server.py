@@ -229,7 +229,9 @@ def build_where(p):
         where.append("i.lat BETWEEN ? AND ? AND i.lon BETWEEN ? AND ?")
         args += [s_, n_, w_, e_]
     folder = p.get("folder")
-    if folder is not None and folder != "":
+    if p.get("folder_root") == "1":  # Fotos direkt im Fotoordner (ohne Unterordner)
+        where.append("i.folder = ''")
+    elif folder is not None and folder != "":
         if p.get("recursive") == "1":
             where.append("(i.folder = ? OR i.folder LIKE ?)")
             args += [folder, folder.replace("%", "\\%") + "/%"]
@@ -269,7 +271,7 @@ def query_items(p):
         p = dict(p, _inhalt_ids=list(rank))
     where, args = build_where(p)
     asc = p.get("sort") == "asc"
-    if p.get("folder") and p.get("recursive") != "1":
+    if (p.get("folder") and p.get("recursive") != "1") or p.get("folder_root") == "1":
         order = "i.name COLLATE NOCASE"
     else:
         order = "i.taken IS NULL, i.taken %s, i.id" % ("ASC" if asc else "DESC")
@@ -2563,6 +2565,9 @@ def r_library(h, p):
     cfg["library_root"] = common.root_setting(path)
     cfg["folders"] = None
     common.save_config(cfg)
+    # nach dem Neustart gleich einlesen (resume → indexer.needs_resume)
+    db().execute("INSERT OR REPLACE INTO meta(key, value) VALUES('index_complete', '0')")
+    db().commit()
     h.send_json({"ok": True, "restart": True})
     threading.Thread(target=_restart, daemon=True).start()
 

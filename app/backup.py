@@ -327,13 +327,14 @@ def _local_files(cfg, con):
         skip_rel = {r[0] for r in con.execute("SELECT path FROM items WHERE dup_of IS NOT NULL AND COALESCE(hidden,0) != 2")}
     out = []
     for top in common.included_folders():
-        root = to_abs(top)
+        only_files = top == common.ROOT_FILES  # nur Dateien direkt im Fotoordner
+        root = common.LIB_ROOT if only_files else to_abs(top)
         if not os.path.isdir(root):
             continue
         for dp, dn, fn in os.walk(root):
             if JOB.stop:
                 return out
-            dn[:] = [d for d in dn if d.lower() not in SKIP_DIRS and not d.startswith(".")]
+            dn[:] = [] if only_files else [d for d in dn if d.lower() not in SKIP_DIRS and not d.startswith(".")]
             for f in fn:
                 if f.startswith(".") or f.lower() in SKIP_FILES or f.endswith(".fa-part"):
                     continue
