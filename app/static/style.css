@@ -663,3 +663,12 @@ a.stat:hover { border-color: #4a525b; }
 #bkbar .progress { width: 90px; margin: 0; display: inline-block; }
 #bkbar small { color: var(--muted); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 260px; }
 .bk-pct { float: right; font-size: 20px; font-weight: 700; }
+/* Ort-Dialog (actLocation) */
+.popover.modal:has(.locdlg) { width: 560px; }
+.locdlg input[type=text] { margin: 8px 0 4px; }
+.locres { max-height: 170px; overflow: auto; }
+.locres .lh { font-size: 11px; color: var(--muted); margin: 6px 0 2px; text-transform: uppercase; letter-spacing: .04em; }
+.locres .li { padding: 4px 8px; border-radius: 6px; cursor: pointer; }
+.locres .li:hover { background: var(--hover, rgba(127,127,127,.15)); }
+.locmap { height: 260px; border-radius: 8px; margin: 8px 0 6px; background: rgba(127,127,127,.12); }
+.locsel { margin-bottom: 6px; }

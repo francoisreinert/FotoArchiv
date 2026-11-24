@@ -709,7 +709,7 @@ def r_item(h, p, iid):
     c = db()
     cols = ["id", "path", "folder", "name", "ext", "kind", "size", "taken", "taken_src", "width", "height", "duration",
             "lat", "lon", "place", "camera", "rating", "fav", "keywords", "caption", "dup_of", "raw_of", "error",
-            "hidden", "usertags", "userrot", "trashed", "trash_from", "edit", "pano"]
+            "hidden", "usertags", "userrot", "trashed", "trash_from", "edit", "pano", "userloc"]
     row = c.execute("SELECT %s FROM items WHERE id=?" % ",".join(cols), (int(iid),)).fetchone()
     if not row:
         return h.send_error(404)
@@ -1447,6 +1447,90 @@ def r_items_date(h, p):
     c.commit()
     _refresh(ids)
     h.send_json({"ok": True})
+
+
+def r_items_location(h, p):
+    """Aufnahmeort setzen (nur im Katalog, die Datei bleibt unverändert; Export schreibt ihn ins EXIF).
+    {ids, lat, lon} setzen · {ids, clear: true} Ort entfernen · {ids, reset: true} wieder Ort aus der Datei.
+    userloc = JSON {"orig": [lat, lon] | null} – merkt sich den Ort aus der Datei fürs Zurücksetzen."""
+    import indexer
+
+    b = h.body()
+    ids = _ids(b)
+    c = db()
+    if b.get("reset"):
+        for ch in _chunks(ids):
+            for i, ul in c.execute("SELECT id, userloc FROM items WHERE userloc IS NOT NULL AND id IN (%s)"
+                                   % ",".join("?" * len(ch)), ch).fetchall():
+                try:
+                    o = json.loads(ul).get("orig")
+                except ValueError:
+                    o = None
+                c.execute("UPDATE items SET lat=?, lon=?, place=NULL, userloc=NULL WHERE id=?",
+                          (o[0] if o else None, o[1] if o else None, i))
+        c.commit()
+        indexer.geocode(c)
+        _refresh(ids, private=False)
+        return h.send_json({"ok": True})
+    if b.get("clear"):
+        lat = lon = place = None
+    else:
+        try:
+            lat, lon = float(b["lat"]), float(b["lon"])
+        except (KeyError, TypeError, ValueError):
+            return h.send_json({"error": "Ort fehlt"}, 400)
+        if not (-90 <= lat <= 90 and -180 <= lon <= 180):
+            return h.send_json({"error": "Koordinaten ungültig"}, 400)
+        lat, lon = round(lat, 6), round(lon, 6)
+        place = indexer.place_name(lat, lon)
+    for i in ids:
+        row = c.execute("SELECT lat, lon, userloc FROM items WHERE id=?", (i,)).fetchone()
+        if not row:
+            continue
+        ul = row[2] or json.dumps({"orig": [row[0], row[1]] if row[0] is not None else None})
+        c.execute("UPDATE items SET lat=?, lon=?, place=?, userloc=? WHERE id=?", (lat, lon, place, ul, i))
+    c.commit()
+    _refresh(ids, private=False)
+    h.send_json({"ok": True, "place": place})
+
+
+def r_location_suggest(h, p):
+    """Vorschläge für den Ort-Dialog: Orte von Fotos, die zeitlich in der Nähe liegen (z. B. Handyfotos neben
+    Kamerafotos ohne GPS), und Ortssuche (Orte im Katalog + Ortsliste)."""
+    import indexer
+
+    c = db()
+    out = {"near": [], "search": []}
+    hide = "AND COALESCE(priv_eff,0)=0 " if locked(h) else ""
+    iid = p.get("id")
+    row = c.execute("SELECT taken FROM items WHERE id=?", (int(iid),)).fetchone() if iid else None
+    if row and row[0]:
+        t = row[0]
+        seen = set()
+        for _d, lat, lon, place, taken, nid in c.execute(
+                "SELECT ABS(julianday(taken) - julianday(?)) d, lat, lon, place, taken, id FROM items "
+                "WHERE lat IS NOT NULL AND COALESCE(hidden,0) != 2 AND id != ? " + hide +
+                "AND taken BETWEEN datetime(?, '-3 days') AND datetime(?, '+3 days') ORDER BY d LIMIT 400",
+                (t, int(iid), t, t)):
+            key = place or "%.3f,%.3f" % (lat, lon)
+            if key in seen:
+                continue
+            seen.add(key)
+            out["near"].append({"name": place or "%.5f, %.5f" % (lat, lon), "lat": lat, "lon": lon,
+                                "taken": taken, "id": nid})
+            if len(out["near"]) >= 6:
+                break
+    q = (p.get("q") or "").strip()
+    if len(q) >= 2:
+        like = "%" + q.replace("\\", "").replace("%", "\\%").replace("_", "\\_") + "%"
+        for place, lat, lon, n in c.execute(
+                "SELECT place, AVG(lat), AVG(lon), COUNT(*) n FROM items WHERE place LIKE ? ESCAPE '\\' "
+                "AND lat IS NOT NULL AND COALESCE(hidden,0) != 2 " + hide + "GROUP BY place ORDER BY n DESC LIMIT 6",
+                (like,)):
+            out["search"].append({"name": place, "lat": round(lat, 5), "lon": round(lon, 5), "count": n})
+        have = {x["name"] for x in out["search"]}
+        out["search"] += [x for x in indexer.search_cities(q) if x["name"] not in have][:8]
+    h.send_json(out)
 
 
 def r_items_tags(h, p):
@@ -3308,6 +3392,8 @@ ROUTES = [
     ("POST", r"/api/dups/stop", r_dups_stop),
     ("POST", r"/api/items/rotate", r_items_rotate),
     ("POST", r"/api/items/date", r_items_date),
+    ("POST", r"/api/items/location", r_items_location),
+    ("GET", r"/api/location/suggest", r_location_suggest),
     ("POST", r"/api/items/tags", r_items_tags),
     ("POST", r"/api/items/person", r_items_person),
     ("POST", r"/api/albums", r_album_create),

@@ -2241,7 +2241,7 @@ function renderPanel() {
     name: "Dateiname", file: "Dateidatum (unsicher)", undated: "in Mylio undatiert" }[it.taken_src] || "";
   panel.innerHTML = `<h3>${esc(fmtDate(it.taken))}</h3><div class="muted">${esc(srcLabel)}</div>
     <dl>
-      ${it.place ? `<dt>Ort</dt><dd>${esc(it.place)}</dd>` : ""}
+      ${it.place ? `<dt>Ort</dt><dd>${esc(it.place)}${it.userloc ? ' <span class="muted" title="In FotoArchiv gesetzt, die Datei hat einen anderen oder keinen Ort">(selbst gesetzt)</span>' : ""}</dd>` : ""}
       ${it.lat != null ? `<dt>GPS</dt><dd><a href="https://www.openstreetmap.org/?mlat=${it.lat}&mlon=${it.lon}#map=15/${it.lat}/${it.lon}" target="_blank">${it.lat.toFixed(5)}, ${it.lon.toFixed(5)}</a></dd>` : ""}
       ${it.camera ? `<dt>Kamera</dt><dd>${esc(it.camera)}</dd>` : ""}
       <dt>Größe</dt><dd>${it.width ? `${it.width} × ${it.height}` : ""} ${fmtSize(it.size)}${it.duration ? ` · ${Math.round(it.duration)} s` : ""}</dd>
@@ -2259,7 +2259,7 @@ function renderPanel() {
       ${it.error ? `<dt>Fehler</dt><dd>${esc(it.error)}</dd>` : ""}
     </dl>
     <div class="v-acts"><button onclick="openExternal(${it.id})">Öffnen mit …</button><button onclick="revealExternal(${it.id})">Im Ordner zeigen</button>
-      <button id="vp-date">Datum ändern</button><button id="vp-person">+ Person</button>
+      <button id="vp-date">Datum ändern</button><button id="vp-loc">Ort ändern</button><button id="vp-person">+ Person</button>
       <button id="vp-hide">${it.hidden ? "Wieder einblenden" : "Ausblenden"}</button>
       <button id="vp-priv">${it.private ? "Privat aufheben" : "🔒 Privat"}</button>
       ${it.kind !== "video" ? `<button id="vp-edit">✎ ${it.edit ? "Bearbeitung ändern" : "Bearbeiten"}</button>` : ""}
@@ -2278,6 +2278,7 @@ function bindPanel(panel, it) {
   $("#vp-album", panel).onclick = async () => { if (await actAlbum(ids)) after(); };
   $("#vp-tag", panel).onclick = async () => { if (await actTag(ids)) after(); };
   $("#vp-date", panel).onclick = async () => { if (await actDate(ids, it.taken)) after("Datum geändert"); };
+  $("#vp-loc", panel).onclick = async () => { const m = await actLocation(ids, it); if (m) after(m); };
   $("#vp-person", panel).onclick = async () => { if (await actPerson(ids)) after(); };
   $("#vp-hide", panel).onclick = async () => {
     await api("/api/items/hide", { ids, hidden: !it.hidden });
@@ -2408,6 +2409,7 @@ async function runAction(act, ev) {
       ["unfav", "☆ Favorit entfernen"],
       ["rotr", "⟳ Nach rechts drehen"], ["rotl", "⟲ Nach links drehen"],
       ["date", "Datum ändern …"],
+      ["loc", "Ort ändern …"],
       "-",
       ctx.trash ? null : ["autoedit", "✨ Auto verbessern"],
       ctx.trash || n !== 1 ? null : ["copyedit", "Bearbeitung kopieren"],
@@ -2464,6 +2466,11 @@ async function runAction(act, ev) {
         g.layout();
       }
       else if (m === "date") { if (await actDate(ids)) done("Datum geändert", true); }
+      else if (m === "loc") {
+        const it = n === 1 ? await api(`/api/item/${ids[0]}`) : null;
+        const msg = await actLocation(ids, it);
+        if (msg) done(msg);
+      }
       else if (m === "autoedit" || m === "resetedit" || m === "copyedit" || m === "pasteedit") {
         if (m === "copyedit") {  // Bearbeitung eines Fotos merken, um sie auf andere zu übertragen
           const it = await api(`/api/item/${ids[0]}`);
@@ -3136,6 +3143,107 @@ async function actDate(ids, current) {
       await api("/api/items/date", { ids, date: t && ids.length === 1 ? `${d} ${t}` : d });
       res(true);
     };
+  });
+}
+// Aufnahmeort setzen: Suche (Orte im Katalog + Ortsliste), Koordinaten/Karten-Link einfügen, Fotos aus derselben Zeit, Karte
+function parseCoords(s) {
+  s = (s || "").trim();
+  let m = s.match(/@(-?\d+\.\d+),(-?\d+\.\d+)/) || s.match(/mlat=(-?\d+\.?\d*).*?mlon=(-?\d+\.?\d*)/)
+    || s.match(/map=\d+\/(-?\d+\.?\d*)\/(-?\d+\.?\d*)/) || s.match(/[?&](?:q|ll|query)=(-?\d+\.\d+),\s*(-?\d+\.\d+)/)
+    || s.match(/^(-?\d{1,2}\.\d+)\s*[,; ]\s*(-?\d{1,3}\.\d+)$/) || s.match(/^(-?\d{1,2},\d+)\s*[; ]\s*(-?\d{1,3},\d+)$/);
+  if (m) return [parseFloat(m[1].replace(",", ".")), parseFloat(m[2].replace(",", "."))];
+  // 44°59'16.8"N 14°2'52.8"E
+  const d = [...s.matchAll(/(\d+(?:[.,]\d+)?)\s*°\s*(?:(\d+(?:[.,]\d+)?)\s*['′])?\s*(?:(\d+(?:[.,]\d+)?)\s*["″])?\s*([NSEWO])/gi)];
+  if (d.length === 2) {
+    const v = x => (parseFloat(x[1].replace(",", ".")) + (parseFloat((x[2] || "0").replace(",", ".")) / 60) + (parseFloat((x[3] || "0").replace(",", ".")) / 3600)) * (/[SW]/i.test(x[4]) ? -1 : 1);
+    return [v(d[0]), v(d[1])];
+  }
+  return null;
+}
+async function actLocation(ids, it) {
+  const n = ids.length;
+  const cur = it && it.lat != null ? [it.lat, it.lon] : null;
+  let pick = cur ? { lat: cur[0], lon: cur[1], name: it.place || "" } : null;
+  const p = modal(`<div class="locdlg"><b>Aufnahmeort ${n > 1 ? "für " + n.toLocaleString("de-DE") + " Fotos " : ""}festlegen</b>
+    <input type="text" id="lq" placeholder="Ort suchen, Koordinaten oder Karten-Link einfügen" autocomplete="off">
+    <div id="lres" class="locres"></div>
+    <div id="lmap" class="locmap"></div>
+    <div id="lsel" class="muted locsel"></div>
+    <div class="muted" style="font-size:12px">Auf die Karte klicken setzt den Punkt genau. Die Datei selbst bleibt unverändert –
+      der Ort gilt in FotoArchiv und wird beim Exportieren in die EXIF-Daten geschrieben.</div>
+    <div class="row"><button class="primary" id="lok">Speichern</button>
+      ${cur || n > 1 ? '<button id="lclear">Ort entfernen</button>' : ""}
+      ${it && it.userloc || n > 1 ? '<button id="lreset" title="Wieder den Ort aus der Datei verwenden">Ort aus der Datei</button>' : ""}
+      <button id="lno">Abbrechen</button></div></div>`);
+  const res = $("#lres", p), sel = $("#lsel", p), q = $("#lq", p);
+  let map = null, marker = null;
+  const show = () => {
+    sel.innerHTML = pick ? `📍 <b>${esc(pick.name || "")}</b> ${pick.lat.toFixed(5)}, ${pick.lon.toFixed(5)}` : "Noch kein Ort gewählt.";
+    if (map && pick) {
+      if (marker) marker.setLatLng([pick.lat, pick.lon]); else marker = L.marker([pick.lat, pick.lon]).addTo(map);
+    }
+  };
+  const choose = (lat, lon, name, zoom) => {
+    pick = { lat, lon, name: name || "" };
+    show();
+    if (map) map.setView([lat, lon], zoom || Math.max(map.getZoom(), 13));
+  };
+  const list = (title, arr) => arr.length ? `<div class="lh">${title}</div>` + arr.map((x, i) =>
+    `<div class="li" data-i="${i}" data-t="${title}">${esc(x.name)}${x.count ? ` <span class="muted">${x.count.toLocaleString("de-DE")} Fotos</span>` : ""}${x.taken ? ` <span class="muted">${esc(fmtDate(x.taken))}</span>` : ""}</div>`).join("") : "";
+  let near = [], found = [], online = null;
+  const renderRes = () => {
+    const v = q.value.trim();
+    res.innerHTML = list("Suche", found) + (online ? (online.length ? list("Online (OpenStreetMap)", online)
+      : '<div class="lh">Online (OpenStreetMap)</div><div class="muted" style="padding:4px 8px">nichts gefunden</div>') : "")
+      + (v.length >= 2 && !online ? '<div class="muted" style="font-size:12px;padding:4px 8px">Nicht dabei? Enter sucht auch online (OpenStreetMap), z. B. kleine Dörfer oder Straßen.</div>' : "")
+      + (v ? "" : list("Fotos aus derselben Zeit", near));
+    $$(".li", res).forEach(el => el.onclick = () => {
+      const t = el.dataset.t;
+      const x = (t === "Suche" ? found : t === "Fotos aus derselben Zeit" ? near : online)[+el.dataset.i];
+      choose(x.lat, x.lon, x.name, t === "Online (OpenStreetMap)" ? 16 : 13);
+    });
+  };
+  const searchOnline = async () => {
+    const v = q.value.trim();
+    if (v.length < 2 || parseCoords(v)) return;
+    try {
+      const r = await fetch("https://nominatim.openstreetmap.org/search?format=jsonv2&limit=6&accept-language=de&q=" + encodeURIComponent(v));
+      online = (await r.json()).map(x => ({ name: x.display_name, lat: +x.lat, lon: +x.lon }));
+    } catch { online = []; toast("Online-Suche nicht erreichbar"); }
+    renderRes();
+  };
+  if (n >= 1) api(`/api/location/suggest?id=${ids[0]}`).then(r => { near = r.near; renderRes(); }).catch(() => {});
+  let tmr = null;
+  q.addEventListener("keydown", e => { e.stopPropagation(); if (e.key === "Enter") { e.preventDefault(); searchOnline(); } });
+  q.oninput = () => {
+    clearTimeout(tmr);
+    online = null;
+    const v = q.value.trim();
+    const c = parseCoords(v);
+    if (c && Math.abs(c[0]) <= 90 && Math.abs(c[1]) <= 180) { found = []; renderRes(); return choose(c[0], c[1], "", 15); }
+    if (v.length < 2) { found = []; return renderRes(); }
+    tmr = setTimeout(async () => { found = (await api(`/api/location/suggest?q=${encodeURIComponent(v)}`)).search; renderRes(); }, 250);
+  };
+  show();
+  loadLeaflet().then(() => {
+    if (!p.isConnected) return;
+    map = L.map($("#lmap", p)).setView(pick ? [pick.lat, pick.lon] : [50, 10], pick ? 13 : 4);
+    L.tileLayer("https://tile.openstreetmap.org/{z}/{x}/{y}.png", { maxZoom: 19, attribution: "© OpenStreetMap" }).addTo(map);
+    map.on("click", e => choose(e.latlng.lat, e.latlng.lng, "", map.getZoom()));
+    show();
+  }).catch(() => { $("#lmap", p).innerHTML = '<div class="muted" style="padding:10px">Karte nicht verfügbar (offline?) – Suche und Koordinaten gehen trotzdem.</div>'; });
+  q.focus();
+  return new Promise(done => {
+    const fin = async (body, msg) => {
+      closePopover();
+      try { await api("/api/items/location", Object.assign({ ids }, body)); done(msg); }
+      catch (e) { toast(e.message, 8000); done(null); }
+    };
+    $("#lno", p).onclick = () => { closePopover(); done(null); };
+    $("#lok", p).onclick = () => pick ? fin({ lat: pick.lat, lon: pick.lon }, "Ort gespeichert") : toast("Bitte zuerst einen Ort wählen");
+    const lc = $("#lclear", p), lr = $("#lreset", p);
+    if (lc) lc.onclick = () => fin({ clear: true }, "Ort entfernt");
+    if (lr) lr.onclick = () => fin({ reset: true }, "Ort aus der Datei wiederhergestellt");
   });
 }
 function askText(title, value = "") {

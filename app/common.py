@@ -337,7 +337,7 @@ def connect(path=CATALOG_DB, schema=SCHEMA):
                          ("ev_bias", "REAL"), ("exp_mode", "INTEGER"), ("stack", "INTEGER"), ("stack_top", "INTEGER"),
                          ("doc_state", "INTEGER"), ("pano", "TEXT"), ("ocr", "TEXT"), ("ocr_ver", "INTEGER"),
                          ("live", "INTEGER"), ("nude", "INTEGER"), ("nude_score", "REAL"),
-                         ("nude_fix", "INTEGER")):
+                         ("nude_fix", "INTEGER"), ("userloc", "TEXT")):
             if col not in cols:
                 con.execute("ALTER TABLE items ADD COLUMN %s %s" % (col, typ))
         # Abdeckende Indizes: Übersicht, Kalender und Ordner lesen nur den Index statt jede Zeile

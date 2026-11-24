@@ -88,8 +88,13 @@ FOTOS BEARBEITEN UND ORDNEN
   von <Person> / des Monats (Kalender)". Gilt auch für die Archiv-Ansicht im Bucket.
   Markieren: Haken oben links im Foto (Shift = Bereich, Strg/Cmd = einzeln, "Monat auswählen",
   Strg+A = alle). Oben erscheint eine Leiste: Favorit, + Album, + Ereignis, + Person, + Stichwort,
-  "Mehr …": drehen, Datum ändern, Person/Stichwort entfernen, aus Album entfernen, Titelbild,
+  "Mehr …": drehen, Datum/Ort ändern, Person/Stichwort entfernen, aus Album entfernen, Titelbild,
   ausblenden. Ausgeblendete Fotos: Alben & Ereignisse › Ausgeblendete Fotos.
+  Ort ändern: "Mehr …" › "Ort ändern …" (oder im Foto: Info › "Ort ändern"). Ort suchen (Enter sucht auch online
+  bei OpenStreetMap, z. B. kleine Dörfer), Koordinaten oder einen Google-Maps-/OpenStreetMap-Link einfügen, auf die
+  Karte klicken oder einen Ort von Fotos aus derselben Zeit übernehmen (praktisch für Kamerafotos ohne GPS neben
+  Handyfotos). Die Datei selbst bleibt unverändert; beim Exportieren steht der Ort in den EXIF-Daten.
+  "Ort aus der Datei" macht es rückgängig.
   Beiseite: "Mehr …" › "Aus der Zeitleiste nehmen" nimmt Fotos aus Fotos/Zeitleiste und Kalender, sie bleiben
   aber in Alben, Ordnern, bei Personen und in der Suche (anders als Ausblenden, das sie überall versteckt).
   Seitenleiste › Beiseite zeigt sie mit eigener Zeitleiste (Jahr wählen) und eigenem Kalender. Ganze Ordner:

@@ -68,9 +68,9 @@ def _items(con, ids):
     rows = {}
     for i in range(0, len(ids), 500):
         ch = ids[i:i + 500]
-        for r in con.execute("SELECT id, path, kind, name, taken, userrot FROM items WHERE id IN (%s)"
+        for r in con.execute("SELECT id, path, kind, name, taken, userrot, userloc, lat, lon FROM items WHERE id IN (%s)"
                              % ",".join("?" * len(ch)), ch):
-            rows[r[0]] = r
+            rows[r[0]] = r[:6] + ((r[7], r[8]) if r[6] else None,)  # gps: nur selbst gesetzter Ort
     return [rows[i] for i in ids if i in rows]
 
 
@@ -86,8 +86,23 @@ def reveal(path):
 
 # ---------------------------------------------------------------- Export ----
 
-def _as_jpeg(path, kind, max_side, userrot):
-    """Foto als JPEG (richtig gedreht, Datum/GPS bleiben in den EXIF-Daten)."""
+def _gps_ifd(lat, lon):
+    """EXIF-GPS-Block für eine Koordinate."""
+    from PIL.TiffImagePlugin import IFDRational
+
+    def dms(v):
+        v = abs(v)
+        d = int(v)
+        m = int((v - d) * 60)
+        s = (v - d - m / 60) * 3600
+        return (IFDRational(d, 1), IFDRational(m, 1), IFDRational(round(s * 10000), 10000))
+
+    return {0: b"\x02\x03\x00\x00", 1: "N" if lat >= 0 else "S", 2: dms(lat), 3: "E" if lon >= 0 else "W", 4: dms(lon)}
+
+
+def _as_jpeg(path, kind, max_side, userrot, gps=None):
+    """Foto als JPEG (richtig gedreht, Datum/GPS bleiben in den EXIF-Daten).
+    gps = selbst gesetzter Ort (lat, lon) bzw. (None, None) = Ort entfernt; None = Ort aus der Datei."""
     import media
 
     im, exif, _x, _s, _o = media.open_image(path, kind, max_side=max_side, userrot=userrot or 0,
@@ -96,6 +111,17 @@ def _as_jpeg(path, kind, max_side, userrot):
         im.thumbnail((max_side, max_side), Image.LANCZOS)
     buf = io.BytesIO()
     kw = {"quality": 90, "optimize": True}
+    if gps is not None:
+        exif = exif or Image.Exif()
+        try:
+            g = exif.get_ifd(0x8825)
+            g.clear()
+            if gps[0] is not None:
+                g.update(_gps_ifd(*gps))
+            elif 0x8825 in exif:
+                del exif[0x8825]
+        except Exception:
+            pass
     if exif:
         try:
             exif[0x0112] = 1  # Bild ist bereits gedreht
@@ -129,7 +155,7 @@ def export(ids, size="small", as_zip=False, name=None, dest=None, apple_photos=F
         used = set()
         written = []
         max_side = SIZES.get(size)
-        for iid, rel, kind, fname, taken, userrot in items:
+        for iid, rel, kind, fname, taken, userrot, gps in items:
             if JOB.stop:
                 break
             JOB.done += 1
@@ -140,11 +166,11 @@ def export(ids, size="small", as_zip=False, name=None, dest=None, apple_photos=F
                 prefix = (taken or "")[:19].replace(":", "-").replace(" ", "_")
                 if not stem.startswith((taken or "-")[:10]):
                     stem = (prefix + " " + stem).strip()
-                if kind == "video" or (size == "original" and not userrot):
+                if kind == "video" or (size == "original" and not userrot and gps is None):
                     data_path, data = src, None
                     out_name = stem + ext
-                else:
-                    data_path, data = None, _as_jpeg(src, kind, max_side, userrot)
+                else:  # selbst gesetzter Ort: auch bei „Original“ als JPEG, damit er in den EXIF-Daten steht
+                    data_path, data = None, _as_jpeg(src, kind, max_side, userrot, gps)
                     out_name = stem + ".jpg"
                 k, cand = 1, out_name
                 while cand.lower() in used:
@@ -489,7 +515,7 @@ def render_show(items, out_path, seconds, kenburns, music, clips, job, max_clip_
     rnd = random.Random(42)
 
     def load(row):
-        iid, rel, kind, fname, taken, userrot = row
+        iid, rel, kind, fname, taken, userrot = row[:6]
         try:
             im = media.open_image(to_abs(rel), kind, max_side=2600, userrot=userrot or 0,
                                   edit=common.edit_for(to_abs(rel)))[0]

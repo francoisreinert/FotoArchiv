@@ -290,7 +290,9 @@ def _store(con, res, persons, pending_thumbs):
                     "WHERE id=?", (PROC_VERSION, res["error"], taken, "name" if taken else None, iid))
         return
     con.execute(
-        "UPDATE items SET taken=COALESCE(usertaken, ?), taken_src=CASE WHEN usertaken IS NULL THEN ? ELSE 'manual' END, width=?, height=?, duration=?, lat=?, lon=?, place=NULL, camera=?, "
+        "UPDATE items SET taken=COALESCE(usertaken, ?), taken_src=CASE WHEN usertaken IS NULL THEN ? ELSE 'manual' END, width=?, height=?, duration=?, "
+        "lat=CASE WHEN userloc IS NULL THEN ? ELSE lat END, lon=CASE WHEN userloc IS NULL THEN ? ELSE lon END, "
+        "place=CASE WHEN userloc IS NULL THEN NULL ELSE place END, camera=?, "
         "rating=?, fav=MAX(fav, ?), keywords=?, caption=?, proc_ver=?, has_thumb=?, phash=?, orient=?, rotfix=?, "
         "error=NULL WHERE id=?",
         (m.get("taken"), m.get("taken_src"), m.get("width"), m.get("height"), m.get("duration"), m.get("lat"),
@@ -469,7 +471,7 @@ def _mylio_dates_places(con, data, by_key):
     Mylio hat Vorrang vor Kamera/XMP/Dateidatum – außer das Datum wurde in FotoArchiv selbst gesetzt.
     Teilen sich mehrere Dateien einen Namen, nur wenn das Kameradatum zur Datei passt."""
     info = {r[0]: r[1:] for r in con.execute(
-        "SELECT id, taken, taken_src, usertaken, lat, lon, kind, ext FROM items WHERE proc_ver > 0")}
+        "SELECT id, taken, taken_src, usertaken, lat, lon, kind, ext, userloc FROM items WHERE proc_ver > 0")}
     dates, places = [], []
     for k, m in data.get("media", {}).items():
         if not ("t" in m or "u" in m or "g" in m):
@@ -478,7 +480,7 @@ def _mylio_dates_places(con, data, by_key):
         for iid in ids:
             if iid not in info:
                 continue
-            taken, src, usertaken, lat, lon, kind, ext = info[iid]
+            taken, src, usertaken, lat, lon, kind, ext, userloc = info[iid]
             if kind == "video" and src == "video" and (ext or "").lower() in ("mts", "m2ts"):
                 usertaken = usertaken or taken  # AVCHD-Kamerazeit schlägt Mylio (Mylio lag dort 1 h bzw. Jahre daneben)
             if len(ids) > 1:
@@ -499,7 +501,7 @@ def _mylio_dates_places(con, data, by_key):
                     if not ok:
                         dates.append((t, "mylio", iid))
             g = m.get("g")
-            if g and (lat is None or abs(lat - g[0]) > 0.001 or abs(lon - g[1]) > 0.001):
+            if g and userloc is None and (lat is None or abs(lat - g[0]) > 0.001 or abs(lon - g[1]) > 0.001):
                 places.append((g[0], g[1], iid))
     con.executemany("UPDATE items SET taken=?, taken_src=? WHERE id=?", dates)
     con.executemany("UPDATE items SET lat=?, lon=?, place=NULL WHERE id=?", places)
@@ -553,6 +555,54 @@ def _geo():
         xyz = np.stack([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)], 1).astype("float32")
         _GEO = (names, cc, xyz, countries)
     return _GEO
+
+
+def place_name(lat, lon):
+    """Nächster Ort (wie geocode) für eine Koordinate, z. B. „Rakalj, Kroatien“."""
+    import numpy as np
+
+    names, cc, xyz, countries = _geo()
+    la, lo = np.radians(lat), np.radians(lon)
+    q = np.array([np.cos(la) * np.cos(lo), np.cos(la) * np.sin(lo), np.sin(la)], dtype="float32")
+    b = int(np.argmax(xyz @ q))
+    return names[b] + ", " + (COUNTRY_DE.get(cc[b]) or countries.get(cc[b], cc[b]))
+
+
+_GEO_FOLD = None
+
+
+def _fold(s):
+    """Klein, ohne Akzente: „Marčana“ → „marcana“."""
+    import unicodedata
+
+    s = unicodedata.normalize("NFKD", (s or "").strip().lower())
+    return "".join(ch for ch in s if not unicodedata.combining(ch))
+
+
+def search_cities(text, limit=8):
+    """Orte aus models/cities.txt, deren Name mit text beginnt (genauer Treffer zuerst)."""
+    import numpy as np
+
+    global _GEO_FOLD
+    names, cc, xyz, countries = _geo()
+    t = _fold(text)
+    if len(t) < 2:
+        return []
+    if _GEO_FOLD is None:
+        _GEO_FOLD = [_fold(n) for n in names]
+    hits = []
+    for i, nl in enumerate(_GEO_FOLD):
+        if nl.startswith(t):
+            hits.append((nl != t, len(nl), i))
+    hits.sort()
+    out = []
+    for _x, _l, i in hits[:limit]:
+        v = xyz[i]
+        lat = float(np.degrees(np.arcsin(v[2])))
+        lon = float(np.degrees(np.arctan2(v[1], v[0])))
+        out.append({"name": names[i] + ", " + (COUNTRY_DE.get(cc[i]) or countries.get(cc[i], cc[i])),
+                    "lat": round(lat, 5), "lon": round(lon, 5)})
+    return out
 
 
 def geocode(con):

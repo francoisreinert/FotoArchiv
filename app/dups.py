@@ -111,7 +111,7 @@ def merge_into(con, keep, rem):
     """Katalogangaben der Kopie rem auf keep übertragen (nichts geht verloren)."""
     con.execute("INSERT OR IGNORE INTO album_items(album_id, item_id) SELECT album_id, ? FROM album_items WHERE item_id=?",
                 (keep, rem))
-    cols = ("fav", "rating", "usertags", "caption", "keywords", "private", "usertaken", "lat", "lon", "place", "userrot")
+    cols = ("fav", "rating", "usertags", "caption", "keywords", "private", "usertaken", "lat", "lon", "place", "userrot", "userloc")
     k = dict(zip(cols, con.execute("SELECT %s FROM items WHERE id=?" % ",".join(cols), (keep,)).fetchone()))
     r = dict(zip(cols, con.execute("SELECT %s FROM items WHERE id=?" % ",".join(cols), (rem,)).fetchone()))
     upd = {"fav": max(k["fav"] or 0, r["fav"] or 0), "rating": max(k["rating"] or 0, r["rating"] or 0),
@@ -124,8 +124,8 @@ def merge_into(con, keep, rem):
     for c in ("caption", "keywords"):
         if not k[c] and r[c]:
             upd[c] = r[c]
-    if k["lat"] is None and r["lat"] is not None:
-        upd.update(lat=r["lat"], lon=r["lon"], place=r["place"])
+    if (k["lat"] is None or (r["userloc"] and not k["userloc"])) and r["lat"] is not None:
+        upd.update(lat=r["lat"], lon=r["lon"], place=r["place"], userloc=r["userloc"])
     if not k["usertaken"] and r["usertaken"]:
         upd.update(usertaken=r["usertaken"], taken=r["usertaken"], taken_src="manual")
     if not k["userrot"] and r["userrot"]:
